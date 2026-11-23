@@ -1,0 +1,6 @@
+_site/
+.DS_Store
+data/catalog.csv
+data/catalog.json
+data/version.json
+/embed.js

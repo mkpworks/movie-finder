@@ -1,0 +1,104 @@
+{
+  "genres": [
+    "action",
+    "adventure",
+    "animation",
+    "comedy",
+    "crime",
+    "documentary",
+    "drama",
+    "family",
+    "fantasy",
+    "film-noir",
+    "history",
+    "horror",
+    "music",
+    "musical",
+    "mystery",
+    "romance",
+    "science-fiction",
+    "thriller",
+    "war",
+    "western"
+  ],
+  "decades": [
+    "1890s",
+    "1900s",
+    "1910s",
+    "1920s",
+    "1930s",
+    "1940s",
+    "1950s",
+    "1960s",
+    "1970s",
+    "1980s",
+    "1990s",
+    "2000s",
+    "2010s",
+    "2020s"
+  ],
+  "tags": [
+    "silent",
+    "horror",
+    "noir",
+    "public-domain",
+    "black-and-white",
+    "animated",
+    "cult",
+    "independent",
+    "short",
+    "restored",
+    "subtitled"
+  ],
+  "roles": [
+    "director",
+    "cast",
+    "writer",
+    "composer",
+    "cinematographer",
+    "producer"
+  ],
+  "kinds": [
+    "trailer",
+    "interview",
+    "behind-the-scenes",
+    "making-of",
+    "commentary",
+    "featurette",
+    "q-and-a",
+    "retrospective",
+    "score"
+  ],
+  "watch_types": [
+    "free",
+    "free-with-ads",
+    "subscription",
+    "rent",
+    "buy"
+  ],
+  "free_providers": [
+    "YouTube",
+    "Internet Archive",
+    "Library of Congress"
+  ],
+  "labels": {
+    "film-noir": "Film noir",
+    "science-fiction": "Science fiction",
+    "black-and-white": "Black and white",
+    "public-domain": "Public domain",
+    "behind-the-scenes": "Behind the scenes",
+    "making-of": "Making of",
+    "q-and-a": "Q&A",
+    "free-with-ads": "Free with ads"
+  },
+  "notes": {
+    "tags": {
+      "public-domain": "Public-domain status describes the film, not a promise that every copy is free of ads.",
+      "silent": "No synchronized dialogue, or intertitles only."
+    },
+    "kinds": {
+      "trailer": "A trailer or teaser.",
+      "score": "Music from the film: a suite, a cue, or a performance."
+    }
+  }
+}

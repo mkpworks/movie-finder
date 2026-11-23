@@ -21,6 +21,33 @@ if (errors.length) {
   throw new Error("seed data failed validation");
 }
 assert(Array.isArray(movies), "movies array");
+assert(movies.length === 1506, "film count");
+assert(movies.filter((film) => film.where_to_watch.length > 0).length === 1392, "where to watch count");
+assert(movies.filter((film) => film.related_videos.length > 0).length === 177, "bonus film count");
+assert(movies.reduce((sum, film) => sum + film.related_videos.length, 0) === 321, "bonus video count");
+for (const name of ["biography", "sport", "experimental", "foreign-language"]) {
+  assert(facets.genres.includes(name) || facets.tags.includes(name), "facet includes " + name);
+}
+const fullIndex = Catalog.buildIndex(movies, facets);
+assert(fullIndex.people.director.length === Catalog.TOP_PEOPLE, "director menu is capped");
+assert(fullIndex.allPeople.director.length > Catalog.TOP_PEOPLE, "all directors stay searchable");
+assert(fullIndex.people.director.some((person) => person.name === "Alfred Hitchcock"));
+assert(fullIndex.people.composer[0].name === "John Williams");
+assert(fullIndex.people.cast.some((person) => person.name === "Clint Eastwood"));
+assert(Catalog.searchPeople(fullIndex, "tim burton", 8).some((person) => person.name === "Tim Burton" && person.role === "director"));
+assert(!fullIndex.people.director.some((person) => person.count < fullIndex.people.director[fullIndex.people.director.length - 1].count));
+const butch = movies.find((film) => film.id === "tt0064115");
+assert(butch && /butch cassidy/i.test(butch.title) && butch.related_videos.length >= 1, "Butch Cassidy bonus");
+const butchList = Catalog.listRecord(butch);
+assert(!Object.prototype.hasOwnProperty.call(butchList, "where_to_watch"), "list record omits watch urls");
+assert(butchList.related_videos.length === butch.related_videos.length, "list record keeps bonus videos");
+assert(butchList.watch_count === butch.where_to_watch.length);
+assert(butchList.duration_seconds === butch.duration_seconds);
+assert(butchList.runtime_minutes > 0);
+assert(Catalog.detailRecord(butch).where_to_watch.length === butch.where_to_watch.length);
+assert(fullIndex.withBonus === 177);
+assert(fullIndex.latestChecked === "2026-11-23");
+assert(Catalog.minutesOf(butch) === Math.round(butch.duration_seconds / 60) || Catalog.minutesOf(butch) > 0);
 
 const tagSamples = ["silent", "horror", "noir", "public-domain", "black-and-white", "animated", "cult"];
 const kindSamples = ["trailer", "interview", "behind-the-scenes", "making-of", "commentary", "featurette", "q-and-a", "retrospective", "score"];
@@ -146,6 +173,12 @@ assert(validate([film({
   related_videos: [video({ youtube_id: "bbbbbbbbbbb" }), video({ youtube_id: "bbbbbbbbbbb", title: "Again" })],
 })], facets).some((error) => error.includes("repeats youtube_id")), "duplicate related id");
 assert(validate([film({ related_videos: [video({ channel_url: "https://example.com/@ExampleChannel" })] })], facets).some((error) => error.includes("channel_url")), "channel host");
+assert(validate([film({ related_videos: [video({ channel_url: "NA" })] })], facets).length === 0, validate([film({ related_videos: [video({ channel_url: "NA" })] })], facets).join("; "));
+assert(validate([film({ where_to_watch: [source({ checked_at: "2026-11-23T14:12:49-05:00" })] })], facets).length === 0, "iso checked_at");
+const secondsOnly = film({ duration_seconds: 6000 });
+delete secondsOnly.runtime_minutes;
+assert(validate([secondsOnly], facets).length === 0, "duration_seconds alone");
+assert(Catalog.minutesOf(secondsOnly) === 100);
 assert(validate(movies, ["drama"]).some((error) => error.includes("object")), "facets shape");
 
 const openFacets = { genres: [], decades: [], tags: [], roles: [], kinds: [], watch_types: [], free_providers: [] };
@@ -518,7 +551,7 @@ for (const ref of ["css/styles.css", "js/catalog.js", "js/view.js", "js/app.js",
 }
 assert(!html.includes("data/facets.json"));
 assert(fs.readFileSync(path.join(root, "js/app.js"), "utf8").includes("data/facets.json"), "the page loads facets when present");
-const ids = ["summary", "stats", "theme", "q", "genre", "decade", "tag", "director", "cast", "writer", "composer", "cinematographer", "producer", "bonus", "kind", "sort", "status", "facet-note", "results", "discover", "discover-body", "people-heading", "people-count", "people-list", "genre-heading", "genre-count", "genre-list", "tag-heading", "tag-count", "tag-list", "availability"];
+const ids = ["summary", "stats", "theme", "q", "genre", "decade", "tag", "content-type", "director", "cast", "writer", "composer", "cinematographer", "producer", "bonus", "kind", "sort", "status", "facet-note", "results", "discover", "discover-body", "people-heading", "people-count", "people-q", "people-list", "genre-heading", "genre-count", "genre-list", "tag-heading", "tag-count", "tag-list", "availability"];
 const shell = FinderView.shellHtml();
 for (const id of ids) {
   assert(html.includes('id="' + id + '"'), "page missing " + id);
@@ -561,6 +594,7 @@ assert(boot.includes("attachShadow") && boot.includes("[data-movie-finder]") && 
 assert(boot.includes('cache: "no-store"'), "version fetch bypasses the pages cache");
 assert(boot.includes("data-theme") && boot.includes("data-accent") && boot.includes("data-height"));
 assert(boot.includes("data-kind") && boot.includes("data-genre") && boot.includes("options.kind"), "embed presets kind and genre");
+assert(boot.includes("data-content-type") && boot.includes("data/film/"), "embed loads per-film details");
 const workflow = fs.readFileSync(path.join(root, ".github/workflows/pages.yml"), "utf8");
 for (const name of ["actions/configure-pages", "actions/upload-pages-artifact", "actions/deploy-pages", "scripts/validate-data.js", "scripts/check-catalog.js", "scripts/build-catalog.js", "scripts/build-embed.js", "embed-demo.html", "workflow_dispatch", "needs: build"]) {
   assert(workflow.includes(name), name);
@@ -583,6 +617,12 @@ assert(versionFile.version === "1" && catalogFile.version === "1", "schema versi
 assert(versionFile.generated_at === catalogFile.generated_at && /^\d{4}-\d{2}-\d{2}T/.test(versionFile.generated_at), "generated_at");
 assert(catalogFile.movies.length === movies.length, "catalog.json movies");
 assert(catalogFile.facets.kinds.includes("trailer") && catalogFile.facets.genres.includes("drama"), "catalog.json facets");
+assert(catalogFile.latest_checked === "2026-11-23", "catalog latest check");
+const slimButch = catalogFile.movies.find((film) => film.id === "tt0064115");
+assert(slimButch && !slimButch.where_to_watch && slimButch.related_videos.length >= 1, "slim row keeps the bonus video and drops watch urls");
+const detail = JSON.parse(fs.readFileSync(path.join(built, "film", "tt0064115.json"), "utf8"));
+assert(detail.where_to_watch.length === butch.where_to_watch.length, "detail file keeps every watch offer");
+assert(detail.where_to_watch[0].url === butch.where_to_watch[0].url);
 const embedOut = path.join(built, "embed.js");
 const embedBuild = spawnSync(process.execPath, [path.join(root, "scripts", "build-embed.js"), embedOut], { encoding: "utf8" });
 assert(embedBuild.status === 0, embedBuild.stderr || "build-embed failed");

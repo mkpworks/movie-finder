@@ -26,7 +26,7 @@ node scripts/build-embed.js
 
 ## Add a film
 
-Append an object to `data/movies.json`. The researched catalog is not in this repo yet, so the file ships as an empty array. Keep it empty until each film has been checked.
+Append an object to `data/movies.json`. The file already holds the researched catalog of 1,506 films. `duration_seconds` is the running time; `runtime_minutes` is filled in by the build when a record only has seconds. `content_type` is `full_movie` or `short_film`. A cast `role` can be omitted.
 
 ```json
 {
@@ -54,7 +54,10 @@ Append an object to `data/movies.json`. The researched catalog is not in this re
 ```
 
 - `id` is a unique slug.
-- `year` is `0` and `decade` is `unknown` when the year is not known.
+- `year` is `0` and `decade` is `unknown` when the year is not known. The seed films all have a release year.
+- `duration_seconds` is the running time. `runtime_minutes` is derived for display when it is absent.
+- `content_type` is `full_movie` or `short_film`.
+- `cast.role` may be omitted when the character name is unknown.
 - `youtube_id` is optional. Set it only for a full copy of the film.
 - Do not set `trailer_youtube_id`. Put a trailer in `related_videos` with `"kind": "trailer"`.
 - Genre, tag, decade, role, and kind values have to be listed in `data/facets.json` while those lists are non-empty.
@@ -133,7 +136,7 @@ The Pages build also writes these two files. `embed.js` fetches `data/version.js
 { "version": "1", "generated_at": "2026-11-23T00:00:00.000Z" }
 ```
 
-`data/catalog.json` carries `version`, `generated_at`, `movies`, and `facets`. Item fields are the ones in `SCHEMA.md`. Do not depend on key order. Unknown fields on an item may appear later and should be ignored. GitHub Pages sends `Access-Control-Allow-Origin: *` on these JSON files, which is what a page on another origin needs in order to `fetch` them.
+`data/catalog.json` carries `version`, `generated_at`, `latest_checked`, `movies`, and `facets`. Each movie in that file is a list record: the same fields as `movies.json` except `where_to_watch`, which is replaced by `watch_count` and a `checked_at` day. The offers themselves are `data/film/<id>.json`, fetched for the films on the current page. Browse people lists the 24 most credited names in each role; the person search finds the rest. Do not depend on key order. Unknown fields on an item may appear later and should be ignored. GitHub Pages sends `Access-Control-Allow-Origin: *` on these JSON files, which is what a page on another origin needs in order to `fetch` them.
 
 ## Check the data
 

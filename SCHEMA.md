@@ -11,7 +11,7 @@ There is no `trailer_youtube_id` field. A trailer is a `related_videos` entry wi
 - `movies.json` — array of film objects.
 - `facets.json` — optional vocabulary. When a list in this file is non-empty, film values for that field must use it. When the list is missing or empty, genres, tags, and decades stay open, and the page builds those filters from the films. Kinds and watch types stay the closed sets below either way.
 
-The Pages build writes `data/catalog.json` and `data/version.json`. Those files are the stable data API. Do not edit them by hand.
+The Pages build writes `data/catalog.json`, `data/version.json`, and `data/film/<id>.json` for each film that has where-to-watch links. Those files are the data API. Do not edit them by hand. `data/movies.json` stays the full source, including every watch offer and bonus video. The page loads the list catalog, then the detail file for each visible film. People stay name-based. The browse lists the most credited names in each role, and the person search reaches the rest.
 
 `data/catalog.json` (version `"1"`):
 
@@ -19,7 +19,7 @@ The Pages build writes `data/catalog.json` and `data/version.json`. Those files 
 | --- | --- |
 | `version` | Schema version. Currently `"1"`. |
 | `generated_at` | ISO-8601 timestamp from the build that wrote the file. Cache key only. |
-| `movies` | The same array as `data/movies.json`. |
+| `movies` | List records. Same fields as `movies.json`, without `where_to_watch`. `watch_count` and a `checked_at` day are added. `runtime_minutes` is added when the source only has `duration_seconds`. |
 | `facets` | The same object as `data/facets.json`, or `{}` when that file is absent. |
 
 ## Film fields
@@ -28,14 +28,16 @@ Required on every film:
 
 | Field | Meaning |
 | --- | --- |
-| `id` | Unique lowercase slug, such as `paper-moonlight`. |
+| `id` | Unique id. The researched films use the IMDb id (`tt` plus at least 7 digits). A lowercase slug is also accepted. |
 | `title` | Film title. |
-| `year` | Release year, from 1888 through 2099. `0` if unknown. |
+| `year` | Release year, from 1880 through 2100. `0` if unknown. |
 | `decade` | Decade of `year`, such as `1990s`. Must be `unknown` when `year` is `0`. |
-| `runtime_minutes` | Running time in minutes, from 1 through 2000. |
+| `duration_seconds` | Running time in seconds. The researched catalog uses this field. |
+| `runtime_minutes` | Running time in minutes. Derived from `duration_seconds` when it is omitted. At least one of the two is required. |
+| `content_type` | `full_movie` or `short_film` when present. |
 | `genres` | Non-empty array of unique genre slugs. |
 | `tags` | Array of unique tag slugs. May be empty. |
-| `cast` | Array of `{ "name", "role" }` objects. `role` is the character. May be empty. Names are unique per film. |
+| `cast` | Array of `{ "name", "role"? }` objects. `role` is the character when it is known. May be empty. Names are unique per film. |
 | `directors` | Array of unique names. May be empty. |
 | `composers` | Array of unique names. May be empty. |
 | `writers` | Array of unique names. May be empty. |
@@ -67,7 +69,7 @@ Each offer:
 | `type` | `free`, `free-with-ads`, `subscription`, `rent`, or `buy`. |
 | `url` | `http` or `https` link to that offer. |
 | `region` | Region the check applies to, such as `US` or `worldwide`. |
-| `checked_at` | `YYYY-MM-DD` date the offer was checked. |
+| `checked_at` | `YYYY-MM-DD`, or an ISO 8601 timestamp. The page shows the date. |
 
 `facets.json` `free_providers` names the providers drawn as free sources. A provider whose name contains one of those entries is styled as a free source. Other `free` and `free-with-ads` offers are outlined as free. `subscription`, `rent`, and `buy` are styled as paid. The footer says that availability changes and shows the newest `checked_at` in the catalog.
 

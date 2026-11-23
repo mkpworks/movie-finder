@@ -17,6 +17,7 @@
     ["composer", "composer"],
     ["cinematographer", "cinematographer"],
     ["producer", "producer"],
+    ["content-type", "contentType"],
     ["bonus", "bonus"],
     ["kind", "kind"],
     ["sort", "sort"],
@@ -77,6 +78,7 @@
       decade: pickValue(source.decade, idx.decades, idx),
       tag: pickValue(source.tag, idx.tags, idx),
       kind: pickValue(source.kind, idx.kinds, idx),
+      contentType: pickValue(source.contentType || source.content_type, idx.contentTypes, idx),
       bonus: pickBonus(source.bonus),
       director: pickPerson(source.director, people.director),
       cast: pickPerson(source.cast, people.cast),
@@ -101,6 +103,7 @@
       producer: source.producer || "All",
       bonus: source.bonus || "All",
       kind: source.kind || "All",
+      contentType: source.contentType || "All",
       query: query || "",
     };
   }
@@ -113,8 +116,9 @@
     if (next.decade !== "All" && hits.some((item) => Catalog.decadeOf(item) !== next.decade)) next.decade = "All";
     if (next.tag !== "All" && hits.some((item) => !Catalog.tagsOf(item).includes(next.tag))) next.tag = "All";
     if (next.kind !== "All" && hits.some((item) => !Catalog.kindsOf(item).includes(next.kind))) next.kind = "All";
-    if (next.bonus === "yes" && hits.some((item) => Catalog.relatedVideos(item).length === 0)) next.bonus = "All";
-    if (next.bonus === "no" && hits.some((item) => Catalog.relatedVideos(item).length > 0)) next.bonus = "All";
+    if (next.contentType !== "All" && hits.some((item) => item.content_type !== next.contentType)) next.contentType = "All";
+    if (next.bonus === "yes" && hits.some((item) => Catalog.bonusCount(item) === 0)) next.bonus = "All";
+    if (next.bonus === "no" && hits.some((item) => Catalog.bonusCount(item) > 0)) next.bonus = "All";
     for (const role of Catalog.ROLES) {
       const selected = next[role.id];
       if (selected !== "All" && hits.some((item) => !Catalog.namesFor(item, role.id).some((name) => Catalog.fold(name) === Catalog.fold(selected)))) {
@@ -153,6 +157,7 @@
       '<label class="field">Genre <select id="genre"></select></label>',
       '<label class="field">Decade <select id="decade"></select></label>',
       '<label class="field">Tag <select id="tag"></select></label>',
+      '<label class="field">Type <select id="content-type"></select></label>',
       '<label class="field">Director <select id="director"></select></label>',
       '<label class="field">Cast <select id="cast"></select></label>',
       '<label class="field">Writer <select id="writer"></select></label>',
@@ -183,7 +188,8 @@
       '<span class="cross-title" id="people-heading">People</span>',
       '<span class="cross-count" id="people-count"></span>',
       "</summary>",
-      '<p class="section-note">Grouped by role. Choose a name to fill the search. The number is how many films credit that person in the role.</p>',
+      '<p class="section-note">The most credited names in each role. Search finds anyone else. Choose a name to list their films.</p>',
+      '<label class="field field-search"><span>Find a person</span><input id="people-q" type="search" placeholder="Tim Burton, John Williams, Clint Eastwood" autocomplete="off"></label>',
       '<div id="people-list"></div></details>',
       '<details class="fold"><summary>',
       '<span class="chev" aria-hidden="true">▸</span>',
@@ -226,6 +232,8 @@
       producer: "All",
       bonus: "All",
       kind: "All",
+      contentType: "All",
+      peopleQuery: "",
       query: "",
       page: 0,
       open: {},
@@ -235,6 +243,69 @@
     let index = null;
     let defaults = presets({}, null);
     let discoverStamp = "";
+    let discoverPick = "";
+    let discoverFilms = [];
+    const detailCache = new Map();
+    const detailPending = new Set();
+    const detailBase = opts.detailBase || "data/film/";
+    let detailTimer = null;
+
+    function scheduleDetailRender() {
+      if (detailTimer) return;
+      detailTimer = setTimeout(() => {
+        detailTimer = null;
+        render(false);
+      }, 50);
+    }
+
+    function merged(film) {
+      if (!film) return film;
+      const extra = detailCache.get(film.id);
+      return extra ? Object.assign({}, film, extra) : film;
+    }
+
+    function needsDetail(film) {
+      if (!film || Array.isArray(film.where_to_watch)) return false;
+      return (film.watch_count || 0) > 0;
+    }
+
+    const detailQueue = [];
+    let detailPumping = false;
+
+    function fetchDetail(film) {
+      return fetch(detailBase + encodeURIComponent(film.id) + ".json").then((res) => (res.ok ? res.json() : null)).catch(() => null);
+    }
+
+    function pumpDetails() {
+      if (detailPumping) return;
+      detailPumping = true;
+      const run = () => {
+        if (!detailQueue.length) {
+          detailPumping = false;
+          return;
+        }
+        const batch = detailQueue.splice(0, 4);
+        Promise.all(batch.map(fetchDetail)).then((list) => {
+          list.forEach((detail, index) => {
+            const film = batch[index];
+            detailCache.set(film.id, detail && Array.isArray(detail.where_to_watch) ? detail : { where_to_watch: [] });
+            detailPending.delete(film.id);
+          });
+          scheduleDetailRender();
+          run();
+        });
+      };
+      run();
+    }
+
+    function ensureDetails(films) {
+      for (const film of films || []) {
+        if (!film || !needsDetail(film) || detailCache.has(film.id) || detailPending.has(film.id)) continue;
+        detailPending.add(film.id);
+        detailQueue.push(film);
+      }
+      pumpDetails();
+    }
 
     function groupDomId(key) {
       return state.mode + ":" + key;
@@ -248,8 +319,31 @@
       );
     }
 
+    function filmsForPerson(rows, roleId, name) {
+      const key = Catalog.fold(name);
+      return rows.filter((film) => Catalog.namesFor(film, roleId).some((item) => Catalog.fold(item) === key));
+    }
+
     function currentGroups(rows) {
-      if (state.mode === "people") return Catalog.peopleGroups(rows, state.sort, index);
+      if (state.mode === "people") {
+        const query = state.peopleQuery.trim();
+        const entries = query.length >= 2
+          ? Catalog.searchPeople(index, query, 40)
+          : (index.roles || []).flatMap((role) => ((index.people && index.people[role.id]) || []).map((person) => ({
+            name: person.name,
+            count: person.count,
+            role: role.id,
+            roleLabel: role.singular,
+          })));
+        return entries.map((person) => ({
+          role: person.role,
+          roleLabel: person.roleLabel,
+          key: person.role + "\t" + Catalog.fold(person.name),
+          label: person.name,
+          count: person.count,
+          items: filmsForPerson(rows, person.role, person.name),
+        })).filter((group) => group.items.length);
+      }
       if (state.mode === "list") return [];
       return Catalog.groupFilms(rows, state.mode, state.sort, { index });
     }
@@ -261,6 +355,7 @@
         state.tag === "All" &&
         state.kind === "All" &&
         state.bonus === "All" &&
+        state.contentType === "All" &&
         ROLE_IDS.every((id) => state[id] === "All");
     }
 
@@ -316,13 +411,17 @@
     }
 
     function watchBadges(film) {
-      const entries = Array.isArray(film.where_to_watch) ? film.where_to_watch : [];
+      if (!Array.isArray(film.where_to_watch)) {
+        return film.watch_count ? '<p class="section-note watch-pending">Loading ' + film.watch_count + " places to watch…</p>" : "";
+      }
+      const entries = film.where_to_watch;
       if (!entries.length) return "";
       return '<div class="sources">' + entries.map((entry) => {
         const klass = Catalog.watchClass(entry, index.freeProviders);
         const href = Catalog.safeHttpUrl(entry.url, "");
         const typeLabel = Catalog.labelFor(index, entry.type);
-        const bits = [entry.provider, typeLabel, entry.region, entry.checked_at ? "checked " + entry.checked_at : ""].filter(Boolean);
+        const checked = Catalog.checkedDay(entry.checked_at);
+        const bits = [entry.provider, typeLabel, entry.region, checked ? "checked " + checked : ""].filter(Boolean);
         const label = bits.join(" · ");
         if (!href) return '<span class="source ' + klass + '">' + esc(label) + "</span>";
         return '<a class="source ' + klass + '" href="' + esc(href) + '" target="_blank" rel="noopener noreferrer">' + esc(label) + "</a>";
@@ -395,6 +494,8 @@
     }
 
     function filmArticle(film, articleOptions) {
+      ensureDetails([film]);
+      film = merged(film);
       const grouped = Boolean(articleOptions && articleOptions.grouped);
       const feature = Boolean(articleOptions && articleOptions.feature);
       const showRelated = Boolean(articleOptions && articleOptions.related);
@@ -422,7 +523,8 @@
       if (film.wikidata_id) {
         external.push('<a href="https://www.wikidata.org/wiki/' + esc(film.wikidata_id) + '" target="_blank" rel="noopener noreferrer">Wikidata</a>');
       }
-      const bonusCount = Catalog.relatedVideos(film).length;
+      const bonusCount = Catalog.bonusCount(film);
+      const shortBadge = film.content_type === "short_film" ? '<span class="type-badge">Short</span>' : "";
       const bonusBadge = bonusCount ? '<span class="type-badge">' + bonusCount + " bonus</span>" : "";
       const description = typeof film.description === "string" ? film.description : "";
       const sharedHtml = shared ? '<p class="shared">' + esc(shared) + "</p>" : "";
@@ -439,9 +541,10 @@
         '<p class="meta">' +
         (film.year ? "<span>" + esc(film.year) + "</span>" : "") +
         decadeHtml +
-        '<span class="time">' + esc(Catalog.formatRuntime(film.runtime_minutes)) + "</span>" +
+        '<span class="time">' + esc(Catalog.formatRuntime(Catalog.minutesOf(film))) + "</span>" +
         (film.country ? "<span>" + esc(film.country) + "</span>" : "") +
         (film.language ? "<span>" + esc(film.language) + "</span>" : "") +
+        shortBadge +
         bonusBadge +
         (external.length ? "<span>" + external.join(" · ") + "</span>" : "") +
         "</p>" +
@@ -459,13 +562,17 @@
     function groupBlock(group) {
       const id = groupDomId(group.key);
       const open = Boolean(state.open[id]);
-      const minutes = group.items.reduce((sum, film) => sum + (film.runtime_minutes || 0), 0);
+      const minutes = group.items.reduce((sum, film) => sum + Catalog.minutesOf(film), 0);
       const titleHtml = state.mode === "people"
         ? '<span class="group-id"><span class="group-role">' + esc(group.roleLabel) + "</span>" + searchButton(group.label, "group-title") + "</span>"
         : pivotButton(state.mode, group.key, "group-title", group.label);
       const meta = group.count + " film" + (group.count === 1 ? "" : "s") + " · " + Catalog.formatRuntime(minutes);
+      const visibleItems = state.mode === "people" ? group.items.slice(0, Catalog.PER_PAGE) : group.items;
+      const more = state.mode === "people" && group.items.length > visibleItems.length
+        ? '<p class="section-note">Showing ' + visibleItems.length + " of " + group.items.length + ". Search the name to page through every film.</p>"
+        : "";
       const body = open
-        ? '<div class="group-body">' + group.items.map((film) => filmArticle(film, { grouped: true, related: true })).join("") + "</div>"
+        ? '<div class="group-body">' + visibleItems.map((film) => filmArticle(film, { grouped: true, related: true })).join("") + more + "</div>"
         : "";
       return '<section class="group' + (open ? " is-open" : "") + '">' +
         '<h3 class="group-head">' +
@@ -501,13 +608,31 @@
     }
 
     function peopleDirectory() {
+      const query = state.peopleQuery.trim();
+      if (query.length >= 2) {
+        const found = Catalog.searchPeople(index, query, 40);
+        if (!found.length) return '<p class="section-note">No people match that search.</p>';
+        const byRole = new Map();
+        for (const person of found) {
+          if (!byRole.has(person.role)) byRole.set(person.role, []);
+          byRole.get(person.role).push(person);
+        }
+        return (index.roles || []).map((role) => {
+          const people = byRole.get(role.id) || [];
+          if (!people.length) return "";
+          const chips = people.map((person) => '<span class="chip">' + searchButton(person.name, "chip-btn") + '<span class="chip-count">' + person.count + "</span></span>").join("");
+          return '<div class="role-block"><h3 class="role-label">' + esc(role.plural) + ' <span class="chip-count">' + people.length + "</span></h3><div class=\"chips\">" + chips + "</div></div>";
+        }).join("");
+      }
       const blocks = (index.roles || []).map((role) => {
         const people = (index.people && index.people[role.id]) || [];
         if (!people.length) {
           return '<div class="role-block"><h3 class="role-label">' + esc(role.plural) + ' <span class="chip-count">0</span></h3><p class="section-note">No ' + esc(role.plural.toLowerCase()) + " yet.</p></div>";
         }
         const chips = people.map((person) => '<span class="chip">' + searchButton(person.name, "chip-btn") + '<span class="chip-count">' + person.count + "</span></span>").join("");
-        return '<div class="role-block"><h3 class="role-label">' + esc(role.plural) + ' <span class="chip-count">' + people.length + "</span></h3><div class=\"chips\">" + chips + "</div></div>";
+        const total = index.allPeople && index.allPeople[role.id] ? index.allPeople[role.id].length : people.length;
+        const more = total > people.length ? " of " + total : "";
+        return '<div class="role-block"><h3 class="role-label">' + esc(role.plural) + ' <span class="chip-count">' + people.length + more + "</span></h3><div class=\"chips\">" + chips + "</div></div>";
       }).join("");
       return blocks || '<p class="section-note">No people in the catalog yet.</p>';
     }
@@ -571,17 +696,26 @@
       renderLists();
 
       const discoverBody = byId("discover-body");
-      if (discoverBody && state.pickId !== discoverStamp) {
-        discoverStamp = state.pickId;
-        const pick = index.movies.find((film) => film.id === state.pickId);
-        if (!pick) {
-          discoverBody.innerHTML = '<p class="section-note">No films in the catalog yet.</p>';
-        } else {
-          const similar = Catalog.related(pick, index.movies, 5);
-          const relatedHtml = similar.length
-            ? '<h3 class="subhead">Related</h3>' + similar.map((item) => filmArticle(item.film, { shared: Catalog.relatedReason(item, pick, index) })).join("")
-            : '<p class="section-note">No related films yet.</p>';
-          discoverBody.innerHTML = filmArticle(pick, { feature: true }) + relatedHtml;
+      if (discoverBody) {
+        if (state.pickId !== discoverPick) {
+          discoverPick = state.pickId;
+          const pick = index.movies.find((film) => film.id === state.pickId);
+          const similar = pick ? Catalog.related(pick, index.movies, 5) : [];
+          discoverFilms = pick ? [pick].concat(similar.map((item) => item.film)) : [];
+        }
+        const stamp = discoverPick + ":" + discoverFilms.map((film) => (detailCache.has(film.id) ? "1" : "0")).join("");
+        if (stamp !== discoverStamp) {
+          discoverStamp = stamp;
+          const pick = discoverFilms[0];
+          if (!pick) {
+            discoverBody.innerHTML = '<p class="section-note">No films in the catalog yet.</p>';
+          } else {
+            const similar = Catalog.related(pick, index.movies, 5);
+            const relatedHtml = similar.length
+              ? '<h3 class="subhead">Related</h3>' + similar.map((item) => filmArticle(item.film, { shared: Catalog.relatedReason(item, pick, index) })).join("")
+              : '<p class="section-note">No related films yet.</p>';
+            discoverBody.innerHTML = filmArticle(pick, { feature: true }) + relatedHtml;
+          }
         }
       }
 
@@ -590,6 +724,15 @@
         const again = [...root.querySelectorAll("[data-group]")].find((node) => node.getAttribute("data-group") === focusGroup);
         if (again) again.focus();
       }
+      const toLoad = pageRows.slice();
+      for (const group of pageGroups) {
+        if (state.open[groupDomId(group.key)]) toLoad.push.apply(toLoad, group.items);
+      }
+      if (state.pickId) {
+        const pick = index.movies.find((item) => item.id === state.pickId);
+        if (pick) toLoad.push(pick);
+      }
+      ensureDetails(toLoad);
       if (scroll) {
         const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
         byId("results").scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
@@ -603,6 +746,8 @@
     function syncControls(pages) {
       const query = byId("q");
       if (query && query.value !== state.query) query.value = state.query;
+      const peopleQuery = byId("people-q");
+      if (peopleQuery && peopleQuery.value !== state.peopleQuery) peopleQuery.value = state.peopleQuery;
       for (const [id, key] of SELECTS) {
         const el = byId(id);
         if (el && el.value !== state[key]) el.value = state[key];
@@ -665,6 +810,7 @@
       state.producer = next.producer;
       state.bonus = next.bonus;
       state.kind = next.kind;
+      state.contentType = next.contentType;
     }
 
     function runSearch(query, scroll) {
@@ -688,6 +834,7 @@
       state.producer = defaults.producer;
       state.bonus = defaults.bonus;
       state.kind = defaults.kind;
+      state.contentType = defaults.contentType;
       state.query = "";
       state.page = 0;
       state.seedMode = true;
@@ -706,6 +853,7 @@
       state.producer = "All";
       state.bonus = "All";
       state.kind = "All";
+      state.contentType = "All";
       state.query = "";
       state.page = 0;
       state.seedMode = true;
@@ -806,6 +954,15 @@
         state.page = 0;
         render(false);
       });
+      const peopleQuery = byId("people-q");
+      if (peopleQuery) {
+        peopleQuery.addEventListener("input", (event) => {
+          state.peopleQuery = event.target.value;
+          state.page = 0;
+          state.seedMode = true;
+          render(false);
+        });
+      }
       for (const [id, key] of SELECTS) {
         byId(id).addEventListener("change", (event) => {
           state[key] = event.target.value;
@@ -838,14 +995,16 @@
     state.producer = defaults.producer;
     state.bonus = defaults.bonus;
     state.kind = defaults.kind;
+    state.contentType = defaults.contentType;
     state.pickId = movies[0] ? movies[0].id : "";
     bind();
     fillSelect("genre", index.genres, (value) => Catalog.labelFor(index, value));
     fillSelect("decade", index.decades, (value) => Catalog.labelFor(index, value));
     fillSelect("tag", index.tags, (value) => Catalog.labelFor(index, value));
     fillSelect("kind", index.kinds, (value) => Catalog.labelFor(index, value));
+    fillSelect("content-type", index.contentTypes || [], (value) => Catalog.labelFor(index, value));
     for (const roleId of ROLE_IDS) fillPeople(roleId, roleId);
-    const minutes = movies.reduce((sum, film) => sum + (film.runtime_minutes || 0), 0);
+    const minutes = movies.reduce((sum, film) => sum + Catalog.minutesOf(film), 0);
     const stats = byId("stats");
     if (stats) {
       stats.innerHTML =

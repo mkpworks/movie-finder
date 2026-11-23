@@ -30,6 +30,7 @@ function readOptions(el, extra) {
     decade: el.getAttribute("data-decade"),
     tag: el.getAttribute("data-tag"),
     kind: el.getAttribute("data-kind"),
+    contentType: el.getAttribute("data-content-type"),
     bonus: el.getAttribute("data-bonus"),
     director: el.getAttribute("data-director"),
     cast: el.getAttribute("data-cast"),
@@ -91,6 +92,7 @@ function mount(el, extra) {
   const styleUrl = new URL("css/styles.css", base).href;
   const home = new URL("./", base).href;
   const csv = new URL("data/catalog.csv", base).href;
+  const detailBase = new URL("data/film/", base).href;
   shadow.innerHTML = '<link rel="stylesheet" href="' + styleUrl + '">' + FinderView.shellHtml({ home: home, csv: csv });
   const api = { element: el };
   el.__movieFinder = api;
@@ -104,7 +106,9 @@ function mount(el, extra) {
       decade: options.decade,
       tag: options.tag,
       kind: options.kind,
+      contentType: options.contentType,
       bonus: options.bonus,
+      detailBase: detailBase,
       director: options.director,
       cast: options.cast,
       writer: options.writer,

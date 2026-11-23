@@ -3,4 +3,5 @@ _site/
 data/catalog.csv
 data/catalog.json
 data/version.json
+data/film/
 /embed.js

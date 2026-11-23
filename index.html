@@ -57,6 +57,9 @@
         <label class="field">Tag
           <select id="tag"></select>
         </label>
+        <label class="field">Type
+          <select id="content-type"></select>
+        </label>
         <label class="field">Director
           <select id="director"></select>
         </label>
@@ -124,7 +127,8 @@
         <span class="cross-title" id="people-heading">People</span>
         <span class="cross-count" id="people-count"></span>
       </summary>
-      <p class="section-note">Grouped by role. Choose a name to fill the search. The number is how many films credit that person in the role.</p>
+      <p class="section-note">The most credited names in each role. Search finds anyone else. Choose a name to list their films.</p>
+      <label class="field field-search"><span>Find a person</span><input id="people-q" type="search" placeholder="Tim Burton, John Williams, Clint Eastwood" autocomplete="off"></label>
       <div id="people-list"></div>
     </details>
     <details class="fold">

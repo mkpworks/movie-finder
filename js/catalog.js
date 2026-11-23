@@ -6,7 +6,9 @@
   else root.Catalog = api;
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   const PER_PAGE = 12;
+  const TOP_PEOPLE = 24;
   const SCHEMA_VERSION = "1";
+  const CONTENT_TYPES = ["full_movie", "short_film"];
   const YT_TRAINER_BASE = "https://ytmusictrainer.com/?video_id=";
   const KINDS = [
     "trailer",
@@ -34,6 +36,8 @@
     "title",
     "year",
     "decade",
+    "content_type",
+    "duration_seconds",
     "runtime_minutes",
     "genres",
     "tags",
@@ -153,6 +157,7 @@
       tags: listOf(source.tags),
       roles: listOf(source.roles),
       kinds: listOf(source.kinds),
+      content_types: listOf(source.content_types),
       watch_types: listOf(source.watch_types),
       free_providers: listOf(source.free_providers),
       labels: noteMap(source.labels),
@@ -407,16 +412,72 @@
     return counts;
   }
 
+  function checkedDay(value) {
+    if (typeof value !== "string") return "";
+    const day = value.slice(0, 10);
+    return /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : "";
+  }
+
+  function minutesOf(film) {
+    if (film && Number.isInteger(film.runtime_minutes) && film.runtime_minutes > 0) return film.runtime_minutes;
+    if (film && Number.isInteger(film.duration_seconds) && film.duration_seconds > 0) {
+      return Math.max(1, Math.round(film.duration_seconds / 60));
+    }
+    return 0;
+  }
+
+  function secondsOf(film) {
+    if (film && Number.isInteger(film.duration_seconds) && film.duration_seconds > 0) return film.duration_seconds;
+    if (film && Number.isInteger(film.runtime_minutes) && film.runtime_minutes > 0) return film.runtime_minutes * 60;
+    return 0;
+  }
+
+  function bonusCount(film) {
+    if (film && Array.isArray(film.related_videos)) return film.related_videos.length;
+    return film && Number.isInteger(film.related_count) ? film.related_count : 0;
+  }
+
   function latestCheckedAt(movies) {
     let latest = "";
     for (const film of movies || []) {
+      const own = checkedDay(film && film.checked_at);
+      if (own > latest) latest = own;
       const entries = film && Array.isArray(film.where_to_watch) ? film.where_to_watch : [];
       for (const entry of entries) {
-        const date = entry && entry.checked_at;
-        if (typeof date === "string" && date > latest) latest = date;
+        const day = checkedDay(entry && entry.checked_at);
+        if (day > latest) latest = day;
       }
     }
     return latest;
+  }
+
+  // List rows keep credits and bonus videos. Watch URLs live in per-film detail files.
+  function listRecord(film) {
+    const copy = {};
+    const source = film || {};
+    for (const key of Object.keys(source)) {
+      if (key === "where_to_watch") continue;
+      copy[key] = source[key];
+    }
+    if (!Number.isInteger(copy.runtime_minutes) && Number.isInteger(source.duration_seconds)) {
+      copy.runtime_minutes = Math.max(1, Math.round(source.duration_seconds / 60));
+    }
+    if (!Number.isInteger(copy.duration_seconds) && Number.isInteger(source.runtime_minutes)) {
+      copy.duration_seconds = source.runtime_minutes * 60;
+    }
+    copy.watch_count = Array.isArray(source.where_to_watch) ? source.where_to_watch.length : (Number.isInteger(source.watch_count) ? source.watch_count : 0);
+    copy.related_count = bonusCount(source);
+    const day = latestCheckedAt([source]);
+    if (day) copy.checked_at = day;
+    return copy;
+  }
+
+  function detailRecord(film) {
+    const source = film || {};
+    return {
+      id: source.id,
+      where_to_watch: Array.isArray(source.where_to_watch) ? source.where_to_watch : [],
+    };
   }
 
   function buildIndex(movies, facets) {
@@ -439,15 +500,18 @@
         }
       }
     }
-    const peopleLists = {};
+    const allPeople = {};
+    const topPeople = {};
     for (const role of roles) {
-      peopleLists[role.id] = [...people[role.id].values()].sort((a, b) => compareNames(a.name, b.name) || b.count - a.count);
+      const ranked = [...people[role.id].values()].sort((a, b) => b.count - a.count || compareNames(a.name, b.name));
+      allPeople[role.id] = ranked;
+      topPeople[role.id] = ranked.slice(0, TOP_PEOPLE);
     }
     const searchTextOf = new Map();
     for (const film of items) searchTextOf.set(film, searchText(film, labels));
     const uniquePeople = new Set();
     for (const role of roles) {
-      for (const person of peopleLists[role.id]) uniquePeople.add(fold(person.name));
+      for (const person of allPeople[role.id]) uniquePeople.add(fold(person.name));
     }
     return {
       movies: items,
@@ -460,7 +524,9 @@
       decades: orderedUnion(facet.decades, items.map(decadeOf).filter((decade) => decade && decade !== "unknown")),
       tags: orderedUnion(facet.tags, items.flatMap(tagsOf)),
       kinds: orderedUnion(facet.kinds.length ? facet.kinds : KINDS, items.flatMap(kindsOf)),
-      people: peopleLists,
+      contentTypes: orderedUnion(facet.content_types.length ? facet.content_types : CONTENT_TYPES, items.map((film) => textOf(film, "content_type"))),
+      people: topPeople,
+      allPeople,
       peopleTotal: uniquePeople.size,
       genreCount: countValues(items, genresOf),
       decadeCount: countValues(items, (film) => {
@@ -472,7 +538,7 @@
       searchText: searchTextOf,
       latestChecked: latestCheckedAt(items),
       withVideo: items.filter((film) => film && film.youtube_id).length,
-      withBonus: items.filter((film) => relatedVideos(film).length > 0).length,
+      withBonus: items.filter((film) => bonusCount(film) > 0).length,
     };
   }
 
@@ -489,13 +555,15 @@
     const tag = source.tag || "All";
     const kind = source.kind || "All";
     const bonus = source.bonus || "All";
+    const contentType = source.contentType || source.content_type || "All";
     const query = fold(source.query || "").trim();
     if (genre !== "All" && !genresOf(film).includes(genre)) return false;
     if (decade !== "All" && decadeOf(film) !== decade) return false;
     if (tag !== "All" && !tagsOf(film).includes(tag)) return false;
     if (kind !== "All" && !kindsOf(film).includes(kind)) return false;
-    if (bonus === "yes" && relatedVideos(film).length === 0) return false;
-    if (bonus === "no" && relatedVideos(film).length > 0) return false;
+    if (contentType !== "All" && textOf(film, "content_type") !== contentType) return false;
+    if (bonus === "yes" && bonusCount(film) === 0) return false;
+    if (bonus === "no" && bonusCount(film) > 0) return false;
     for (const role of ROLES) {
       const selected = source[role.id] || "All";
       if (selected === "All") continue;
@@ -681,6 +749,24 @@
       .sort((a, b) => b.places.length - a.places.length || compareNames(a.name, b.name));
   }
 
+  function searchPeople(index, query, limit) {
+    const needle = fold(query).trim();
+    const max = limit || 40;
+    if (!index || needle.length < 2) return [];
+    const roles = index.roles && index.roles.length ? index.roles : ROLES;
+    const out = [];
+    for (const role of roles) {
+      const list = index.allPeople && index.allPeople[role.id];
+      if (!list) continue;
+      for (const person of list) {
+        if (!fold(person.name).includes(needle)) continue;
+        out.push({ name: person.name, count: person.count, role: role.id, roleLabel: role.singular });
+      }
+    }
+    out.sort((a, b) => b.count - a.count || compareNames(a.name, b.name) || compareNames(a.role, b.role));
+    return out.slice(0, max);
+  }
+
   function pageCount(total) {
     return Math.max(1, Math.ceil(total / PER_PAGE));
   }
@@ -716,7 +802,9 @@
       textOf(film, "title"),
       film && film.year ? String(film.year) : "",
       decadeOf(film) === "unknown" ? "" : decadeOf(film),
-      String(Math.max(0, Math.floor(Number(film && film.runtime_minutes) || 0))),
+      textOf(film, "content_type"),
+      String(secondsOf(film)),
+      String(minutesOf(film)),
       joinList(genresOf(film)),
       joinList(tagsOf(film)),
       castCell(film),
@@ -734,7 +822,7 @@
       youtubeWatchUrl(youtubeId),
       trainerUrl(youtubeId),
       watchCell(film),
-      String(relatedVideos(film).length),
+      String(bonusCount(film)),
     ];
     return values.map(csvField).join(",");
   }
@@ -747,7 +835,9 @@
 
   return {
     PER_PAGE,
+    TOP_PEOPLE,
     SCHEMA_VERSION,
+    CONTENT_TYPES,
     YT_TRAINER_BASE,
     KINDS,
     WATCH_TYPES,
@@ -762,6 +852,13 @@
     labelFor,
     formatDuration,
     formatRuntime,
+    minutesOf,
+    secondsOf,
+    bonusCount,
+    checkedDay,
+    listRecord,
+    detailRecord,
+    searchPeople,
     yearKey,
     decadeForYear,
     normalizeFacets,

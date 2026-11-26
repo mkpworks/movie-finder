@@ -170,7 +170,13 @@
     "behind-the-scenes": "Behind the scenes",
     "making-of": "Making of",
     "q-and-a": "Q&A",
-    "free-with-ads": "Free with ads"
+    "free-with-ads": "Free with ads",
+    "oscar-nominee": "Oscar nominee",
+    "best-picture-winner": "Best Picture winner",
+    "best-picture-nominee": "Best Picture nominee",
+    "major-award-winner": "Major award winner",
+    "award-winner": "Any award win",
+    "award-nominee": "Any award nomination"
   },
   "notes": {
     "tags": {
@@ -181,5 +187,190 @@
       "trailer": "A trailer or teaser.",
       "score": "Music from the film: a suite, a cue, or a performance."
     }
-  }
+  },
+  "award_flags": [
+    "oscar-winner",
+    "oscar-nominee",
+    "best-picture-winner",
+    "best-picture-nominee",
+    "major-award-winner",
+    "award-winner",
+    "award-nominee"
+  ],
+  "award_ceremonies": [
+    {
+      "slug": "oscar",
+      "name": "Academy Awards",
+      "short": "Oscar",
+      "major": true
+    },
+    {
+      "slug": "golden-globe",
+      "name": "Golden Globe Awards",
+      "short": "Golden Globe",
+      "major": true
+    },
+    {
+      "slug": "bafta",
+      "name": "BAFTA Awards",
+      "short": "BAFTA",
+      "major": true
+    },
+    {
+      "slug": "sag",
+      "name": "Screen Actors Guild Awards",
+      "short": "SAG",
+      "major": true
+    },
+    {
+      "slug": "critics-choice",
+      "name": "Critics' Choice Awards",
+      "short": "Critics' Choice",
+      "major": true
+    },
+    {
+      "slug": "cannes",
+      "name": "Cannes Film Festival",
+      "short": "Cannes",
+      "major": true
+    },
+    {
+      "slug": "venice",
+      "name": "Venice Film Festival",
+      "short": "Venice",
+      "major": true
+    },
+    {
+      "slug": "berlin",
+      "name": "Berlin International Film Festival",
+      "short": "Berlin",
+      "major": true
+    },
+    {
+      "slug": "saturn",
+      "name": "Saturn Awards",
+      "short": "Saturn",
+      "major": true
+    },
+    {
+      "slug": "independent-spirit",
+      "name": "Independent Spirit Awards",
+      "short": "Independent Spirit",
+      "major": true
+    },
+    {
+      "slug": "dga",
+      "name": "Directors Guild of America Awards",
+      "short": "DGA",
+      "major": true
+    },
+    {
+      "slug": "pga",
+      "name": "Producers Guild of America Awards",
+      "short": "PGA",
+      "major": true
+    },
+    {
+      "slug": "wga",
+      "name": "Writers Guild of America Awards",
+      "short": "WGA",
+      "major": true
+    },
+    {
+      "slug": "sundance",
+      "name": "Sundance Film Festival",
+      "short": "Sundance",
+      "major": true
+    },
+    {
+      "slug": "cesar",
+      "name": "César Awards",
+      "short": "César",
+      "major": true
+    },
+    {
+      "slug": "european-film-awards",
+      "name": "European Film Awards",
+      "short": "European Film Award",
+      "major": false
+    },
+    {
+      "slug": "goya",
+      "name": "Goya Awards",
+      "short": "Goya",
+      "major": false
+    },
+    {
+      "slug": "david-di-donatello",
+      "name": "David di Donatello",
+      "short": "David di Donatello",
+      "major": false
+    },
+    {
+      "slug": "japan-academy",
+      "name": "Japan Academy Film Prize",
+      "short": "Japan Academy Prize",
+      "major": false
+    },
+    {
+      "slug": "aacta",
+      "name": "AACTA Awards",
+      "short": "AACTA",
+      "major": false
+    },
+    {
+      "slug": "annie",
+      "name": "Annie Awards",
+      "short": "Annie",
+      "major": false
+    },
+    {
+      "slug": "grammy",
+      "name": "Grammy Awards",
+      "short": "Grammy",
+      "major": false
+    },
+    {
+      "slug": "hugo",
+      "name": "Hugo Awards",
+      "short": "Hugo",
+      "major": false
+    },
+    {
+      "slug": "nebula",
+      "name": "Nebula Awards",
+      "short": "Nebula",
+      "major": false
+    },
+    {
+      "slug": "nbr",
+      "name": "National Board of Review",
+      "short": "National Board of Review",
+      "major": false
+    },
+    {
+      "slug": "nyfcc",
+      "name": "New York Film Critics Circle",
+      "short": "NYFCC",
+      "major": false
+    },
+    {
+      "slug": "lafca",
+      "name": "Los Angeles Film Critics Association",
+      "short": "LAFCA",
+      "major": false
+    },
+    {
+      "slug": "nsfc",
+      "name": "National Society of Film Critics",
+      "short": "NSFC",
+      "major": false
+    },
+    {
+      "slug": "tiff",
+      "name": "Toronto International Film Festival",
+      "short": "TIFF",
+      "major": false
+    }
+  ]
 }

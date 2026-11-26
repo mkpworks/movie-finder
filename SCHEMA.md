@@ -1,4 +1,4 @@
-# Movie Finder data schema (v1)
+# Movie Finder data schema (v1, with v2 awards fields)
 
 `data/movies.json` is the catalog. `data/facets.json` is the vocabulary for filters. The page and the embed read genres, decades, tags, roles, kinds, watch types, and free-provider names from `facets.json` when that file is present. They are not hardcoded in the scripts.
 
@@ -11,7 +11,7 @@ There is no `trailer_youtube_id` field. A trailer is a `related_videos` entry wi
 - `movies.json` — array of film objects.
 - `facets.json` — optional vocabulary. When a list in this file is non-empty, film values for that field must use it. When the list is missing or empty, genres, tags, and decades stay open, and the page builds those filters from the films. Kinds and watch types stay the closed sets below either way.
 
-The Pages build writes `data/catalog.json`, `data/version.json`, and `data/film/<id>.json` for each film that has where-to-watch links. Those files are the data API. Do not edit them by hand. `data/movies.json` stays the full source, including every watch offer and bonus video. The page loads the list catalog, then the detail file for each visible film. People stay name-based. The browse lists the most credited names in each role, and the person search reaches the rest.
+The Pages build writes `data/catalog.json`, `data/version.json`, and `data/film/<id>.json` for each film that has where-to-watch links or at least one award entry. Those files are the data API. Do not edit them by hand. `data/movies.json` stays the full source, including every watch offer, bonus video, and award entry. The page loads the list catalog, then the detail file for each visible film. People stay name-based. The browse lists the most credited names in each role, and the person search reaches the rest.
 
 `data/catalog.json` (version `"1"`):
 
@@ -19,7 +19,7 @@ The Pages build writes `data/catalog.json`, `data/version.json`, and `data/film/
 | --- | --- |
 | `version` | Schema version. Currently `"1"`. |
 | `generated_at` | ISO-8601 timestamp from the build that wrote the file. Cache key only. |
-| `movies` | List records. Same fields as `movies.json`, without `where_to_watch`. `watch_count` and a `checked_at` day are added. `runtime_minutes` is added when the source only has `duration_seconds`. |
+| `movies` | List records. Same fields as `movies.json`, without `where_to_watch` and without the `awards` array. `watch_count`, `award_terms` (ceremony and category names, for search), and a `checked_at` day are added. `runtime_minutes` is added when the source only has `duration_seconds`. `award_wins`, `award_nominations`, `oscar_wins`, `oscar_nominations`, and `award_flags` stay on the list record. |
 | `facets` | The same object as `data/facets.json`, or `{}` when that file is absent. |
 
 ## Film fields
@@ -150,3 +150,46 @@ node scripts/check-catalog.js
 ```
 
 `validate-data.js` checks ids, the closed kind and watch-type sets, decade consistency, and membership in any non-empty facet list. The Pages workflow runs the same checks before it deploys.
+
+
+## Awards (added in data v2)
+
+Every film carries six award fields. They are additive: catalog schema `version` stays `"1"`, `validate-data.js` ignores them, and `scripts/validate-awards.js` checks them. A film with no known awards has `awards: []`, empty lists, zero counts, and `award_flags: []`.
+
+| Field | Meaning |
+| --- | --- |
+| `awards` | Array of award entries (below). Sorted by ceremony order in `facets.award_ceremonies`, then year, then wins before nominations. |
+| `award_wins` | Unique ceremony slugs (from `facets.award_ceremonies[].slug`) where the film won at least one award, e.g. `["oscar","golden-globe","bafta"]`. Includes non-competitive Oscar wins (Special Achievement, Technical Achievement). |
+| `award_nominations` | Unique ceremony slugs where the film has any entry, won or nominated. A win also counts as a nomination. |
+| `oscar_wins` | Number of **competitive** Academy Award wins. Excludes Special Achievement, Technical/Scientific and Honorary awards (same convention as Wikipedia's "List of Academy Award–winning films"). |
+| `oscar_nominations` | Number of competitive Academy Award nominations, **including** the wins. Driving Miss Daisy: `oscar_wins: 4`, `oscar_nominations: 9`. |
+| `award_flags` | Precomputed filter flags, a subset of `facets.award_flags`: `oscar-winner` (oscar_wins > 0), `oscar-nominee` (oscar_nominations > 0), `best-picture-winner`, `best-picture-nominee`, `major-award-winner` (won at a ceremony with `major: true`), `award-winner` (any win), `award-nominee` (any entry). |
+
+`data/film/<id>.json` carries `where_to_watch` and `awards`. The list catalog leaves those arrays out so the first load stays smaller. The detail view fetches the file.
+
+Each `awards[]` entry:
+
+| Field | Meaning |
+| --- | --- |
+| `ceremony` | Full ceremony name; must equal a `name` in `facets.award_ceremonies` (e.g. `Academy Awards`, `Golden Globe Awards`, `BAFTA Awards`, `Cannes Film Festival`). |
+| `category` | Category as named at that ceremony, without the ceremony prefix, e.g. `Best Picture`, `Best Actress`, `Best Motion Picture – Musical or Comedy`, `Palme d'Or`, `Golden Lion`. Historical names are kept (`Best Art Direction, Black and White`). |
+| `year` | Ceremony year (the Oscars for 1989 films were held in 1990, so `1990`). Omitted when the source has no date. |
+| `result` | `won` or `nominated`. Wins and nominations are kept distinct; a win is never also listed as a separate nomination. |
+| `recipients` | Optional array of people (or song writers) named on the nomination, e.g. `["Jessica Tandy"]`. Picture awards list producers when known. Omitted when unknown. |
+
+The tag `oscar-winner` (already in `facets.tags`) is now set exactly when `oscar_wins > 0`, so the existing tag filter also works.
+
+### Facets for awards
+
+`facets.json` gains two optional keys (ignored by `validate-data.js`):
+
+- `award_flags`: the closed list of flags above, in display order. `labels` gives display names (`oscar-winner` → "Oscar winner", and so on).
+- `award_ceremonies`: `[{ "slug", "name", "short", "major" }]` for every ceremony that appears in the data, in display order. `short` is the badge text (`Oscar`, `Golden Globe`, `BAFTA`, `Cannes`, …). `major: true` marks the ceremonies counted by `major-award-winner`: Academy Awards, Golden Globes, BAFTA, SAG, Critics' Choice, Cannes, Venice, Berlin, Saturn, Independent Spirit, DGA, PGA, WGA, Sundance and César.
+
+### Sources and method
+
+- Bulk source: Wikidata (P166 *award received*, P1411 *nominated for*, with the P585 *point in time*, P805 *ceremony*, P1346 *winner* and P2453 *nominee* qualifiers), from both the film item and the person items whose statement names the film (P1686 *for work*).
+- Academy Award **Best Original Song** entries come from Wikipedia's "Academy Award for Best Original Song" tables. Wikidata attaches those to song items, not films.
+- Golden Globe entries for 13 film categories (both Best Motion Picture categories, Director, Screenplay, the six acting categories, Score, Song and Animated) come from the Wikipedia category list pages. Wikidata is incomplete for the Globes (for example, it had none of Driving Miss Daisy's three wins).
+- Duplicate statements are merged: renamed categories (score, art direction, costume, sound and so on), film-year versus ceremony-year dates, and acting nominations that have several recipients.
+- Each film's competitive Oscar counts were checked against Wikipedia's "List of Academy Award–winning films" (see summary.md).

@@ -26,7 +26,7 @@ node scripts/build-embed.js
 
 ## Add a film
 
-Append an object to `data/movies.json`. The file already holds the researched catalog of 1,506 films. `duration_seconds` is the running time; `runtime_minutes` is filled in by the build when a record only has seconds. `content_type` is `full_movie` or `short_film`. A cast `role` can be omitted.
+Append an object to `data/movies.json`. The file already holds the researched catalog of 3,299 films. `duration_seconds` is the running time; `runtime_minutes` is filled in by the build when a record only has seconds. `content_type` is `full_movie` or `short_film`. A cast `role` can be omitted.
 
 ```json
 {
@@ -88,7 +88,7 @@ The Pages build also writes `data/catalog.csv`, the full catalog in title order,
 node scripts/export-csv.js
 ```
 
-Columns are the film fields, a where-to-watch summary, the YouTube URL, and `ytmusictrainer_url` when the film has a `youtube_id`. `related_count` is the last column and is the number of bonus videos. Related videos do not get their own rows.
+Columns are the film fields, a where-to-watch summary, the YouTube URL, and `ytmusictrainer_url` when the film has a `youtube_id`. `related_count` is the number of bonus videos. Related videos do not get their own rows. Award columns follow: `oscar_wins`, `oscar_nominations`, `award_wins` (ceremony slugs), `award_flags`, and `awards` (`Ceremony YEAR: Category (won|nominated) — Recipient`).
 
 ## Embedding and data API
 
@@ -119,6 +119,9 @@ Other sites load the finder from this repository. They do not copy the catalog.
 | `data-composer` / `composer` | A composer name | No composer filter |
 | `data-cinematographer` / `cinematographer` | A cinematographer name | No cinematographer filter |
 | `data-producer` / `producer` | A producer name | No producer filter |
+| `data-award` / `award` | An award flag, such as `oscar-winner` | No award filter |
+| `data-ceremony` / `ceremony` | Ceremony slugs, comma-separated, such as `golden-globe,bafta` | No ceremony filter |
+| `data-ceremony-result` / `ceremonyResult` | `won` or `nominated` | `won` |
 
 The widget renders in a shadow root, so its CSS does not leak in or out. Search, filters, sort, people grouped by role, and the film cards are the same finder as this site. A thumbnail plays inline from `youtube-nocookie.com`. **View on YouTube** and **Open on YT Trainer** open in a new tab. **Download this list** exports the filtered rows. A **Powered by Movie Finder** link points back here.
 
@@ -136,16 +139,25 @@ The Pages build also writes these two files. `embed.js` fetches `data/version.js
 { "version": "1", "generated_at": "2026-11-23T00:00:00.000Z" }
 ```
 
-`data/catalog.json` carries `version`, `generated_at`, `latest_checked`, `movies`, and `facets`. Each movie in that file is a list record: the same fields as `movies.json` except `where_to_watch`, which is replaced by `watch_count` and a `checked_at` day. The offers themselves are `data/film/<id>.json`, fetched for the films on the current page. Browse people lists the 24 most credited names in each role; the person search finds the rest. Do not depend on key order. Unknown fields on an item may appear later and should be ignored. GitHub Pages sends `Access-Control-Allow-Origin: *` on these JSON files, which is what a page on another origin needs in order to `fetch` them.
+`data/catalog.json` carries `version`, `generated_at`, `latest_checked`, `movies`, and `facets`. Each movie in that file is a list record: the same fields as `movies.json` except `where_to_watch` and the `awards` array. Watch offers are replaced by `watch_count` and a `checked_at` day. Award summaries stay on the list record (`award_wins`, `award_nominations`, `oscar_wins`, `oscar_nominations`, `award_flags`), and `award_terms` keeps ceremony and category names for search. The offers and the full `awards` list are `data/film/<id>.json`, fetched for the films on the current page. A film with watch offers or awards gets a detail file. Browse people lists the 24 most credited names in each role; the person search finds the rest. Do not depend on key order. Unknown fields on an item may appear later and should be ignored. GitHub Pages sends `Access-Control-Allow-Origin: *` on these JSON files, which is what a page on another origin needs in order to `fetch` them.
 
 ## Check the data
 
 ```bash
 node scripts/validate-data.js
+node scripts/validate-awards.js
 node scripts/check-catalog.js
 ```
 
-Validation requires unique slugs, the required film fields, related-video kinds, and facet membership when a facet list is non-empty. The Pages workflow runs the same checks before it deploys.
+Validation requires unique slugs, the required film fields, related-video kinds, and facet membership when a facet list is non-empty. `validate-awards.js` checks ceremony names, Oscar counts, award flags, and the `oscar-winner` tag. The Pages workflow runs the same checks before it deploys.
+
+## Awards
+
+`oscar_wins` counts competitive Academy Awards. Special Achievement, Technical Achievement, Scientific, and Honorary awards are excluded, the same rule as Wikipedia's list of Academy Award–winning films. A win is stored once, with `result: "won"`, and is not also listed as a separate nomination. `oscar_nominations` includes the wins. Driving Miss Daisy has 4 Oscar wins and 9 Oscar nominations.
+
+Oscar Best Original Song and the main Golden Globe film categories come from Wikipedia. Everything else comes from Wikidata. BAFTA, SAG, the guilds, the festivals, and the critics' groups are only as complete as Wikidata, so some wins and nominations are missing.
+
+The Awards filter matches an award flag (Oscar winner, Oscar nominee, Best Picture, a major award, or any win) and any selected ceremony. Won is the default; Nominated matches films nominated at that ceremony, including winners. The filter combines with genre, decade, tag, people, and search. Comedy plus Oscar winner lists the Oscar-winning comedies. The same filters are in the page URL (`?award=oscar-winner&genre=comedy`) and in the embed (`data-award` and `data-ceremony`). Cards show an Oscar, Best Picture, or nomination badge, then up to three other ceremonies the film won. The film's awards section lists every entry.
 
 ## Deploy
 

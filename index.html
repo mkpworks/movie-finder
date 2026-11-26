@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Movie Finder</title>
-  <meta name="description" content="Movie Finder: a film catalog you can search by title and people, and filter by genre, decade, tag, and crew.">
+  <meta name="description" content="Movie Finder: a film catalog you can search by title and people, and filter by genre, decade, awards, and crew.">
   <meta name="theme-color" content="#12100d">
   <link rel="canonical" href="https://mkpworks.github.io/movie-finder/">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
@@ -25,7 +25,7 @@
       <div>
         <p class="eyebrow">Film catalog</p>
         <h1>Movie Finder</h1>
-        <p class="lede" id="summary">Search films by title and people. Filter by genre, decade, tag, and crew.</p>
+        <p class="lede" id="summary">Search films by title and people. Filter by genre, decade, awards, and crew.</p>
         <dl class="stats" id="stats"></dl>
       </div>
       <button type="button" class="btn" id="theme" data-action="theme">Light theme</button>
@@ -93,8 +93,24 @@
             <option value="title">Title A–Z</option>
             <option value="year">Year (oldest first)</option>
             <option value="genre">Genre A–Z</option>
+            <option value="oscar-wins">Most Oscar wins</option>
+            <option value="oscar-noms">Most Oscar nominations</option>
           </select>
         </label>
+        <div class="award-filter">
+          <div class="award-line-filters">
+            <span class="type-label" id="award-label">Awards</span>
+            <div class="chips" id="award-flags" role="radiogroup" aria-labelledby="award-label"></div>
+          </div>
+          <div class="award-line-filters">
+            <span class="type-label" id="ceremony-label">Ceremony</span>
+            <div class="modes" role="group" aria-label="Won or nominated">
+              <button type="button" data-action="ceremony-result" data-result="won" aria-pressed="true">Won</button>
+              <button type="button" data-action="ceremony-result" data-result="nominated" aria-pressed="false">Nominated</button>
+            </div>
+            <div class="chips" id="award-ceremonies" role="group" aria-labelledby="ceremony-label"></div>
+          </div>
+        </div>
       </div>
     </section>
 

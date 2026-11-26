@@ -38,6 +38,9 @@ function readOptions(el, extra) {
     composer: el.getAttribute("data-composer"),
     cinematographer: el.getAttribute("data-cinematographer"),
     producer: el.getAttribute("data-producer"),
+    award: el.getAttribute("data-award"),
+    ceremony: el.getAttribute("data-ceremony"),
+    ceremonyResult: el.getAttribute("data-ceremony-result"),
   } : {};
   return Object.assign({}, fromEl, extra || {});
 }
@@ -115,6 +118,9 @@ function mount(el, extra) {
       composer: options.composer,
       cinematographer: options.cinematographer,
       producer: options.producer,
+      award: options.award,
+      ceremony: options.ceremony,
+      ceremonyResult: options.ceremonyResult,
     });
   }).catch(() => {
     const status = shadow.getElementById("status");

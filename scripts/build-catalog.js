@@ -28,7 +28,7 @@ fs.mkdirSync(filmDir, { recursive: true });
 let details = 0;
 for (const film of movies) {
   const detail = Catalog.detailRecord(film);
-  if (!detail.where_to_watch.length) continue;
+  if (!detail.where_to_watch.length && !detail.awards.length) continue;
   fs.writeFileSync(path.join(filmDir, film.id + ".json"), JSON.stringify(detail));
   details += 1;
 }

@@ -29,7 +29,10 @@
       <p class="lede demo-note">Add this markup. The script loads the catalog from this site, draws inside a shadow root, and does not restyle the host page.</p>
       <pre class="snippet">&lt;div id="movie-finder"&gt;&lt;/div&gt;
 &lt;script src="https://mkpworks.github.io/movie-finder/embed.js" defer&gt;&lt;/script&gt;</pre>
-      <p class="lede demo-note">Optional attributes: <code>data-theme</code> (<code>light</code> or <code>dark</code>), <code>data-accent</code> (a hex color), and <code>data-height</code> (a max height). <code>data-genre</code>, <code>data-decade</code>, <code>data-tag</code>, <code>data-kind</code>, <code>data-bonus</code> (<code>yes</code> or <code>no</code>), and <code>data-director</code>, <code>data-cast</code>, <code>data-writer</code>, <code>data-composer</code>, <code>data-cinematographer</code>, and <code>data-producer</code> preset those filters. Any element with <code>data-movie-finder</code> mounts too. Call <code>MovieFinder.mount(element, options)</code> for the same options in script.</p>
+      <p class="lede demo-note">Optional attributes: <code>data-theme</code> (<code>light</code> or <code>dark</code>), <code>data-accent</code> (a hex color), and <code>data-height</code> (a max height). <code>data-genre</code>, <code>data-decade</code>, <code>data-tag</code>, <code>data-kind</code>, <code>data-bonus</code> (<code>yes</code> or <code>no</code>), <code>data-award</code> (an award flag such as <code>oscar-winner</code>), <code>data-ceremony</code> (ceremony slugs, comma-separated), <code>data-ceremony-result</code> (<code>won</code> or <code>nominated</code>), and <code>data-director</code>, <code>data-cast</code>, <code>data-writer</code>, <code>data-composer</code>, <code>data-cinematographer</code>, and <code>data-producer</code> preset those filters. Any element with <code>data-movie-finder</code> mounts too. Call <code>MovieFinder.mount(element, options)</code> for the same options in script.</p>
+      <pre class="snippet">&lt;div id="movie-finder"
+  data-award="oscar-winner"
+  data-genre="comedy"&gt;&lt;/div&gt;</pre>
     </div>
   </header>
   <div class="wrap">

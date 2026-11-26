@@ -57,6 +57,11 @@
     "ytmusictrainer_url",
     "where_to_watch",
     "related_count",
+    "oscar_wins",
+    "oscar_nominations",
+    "award_wins",
+    "award_flags",
+    "awards",
   ];
 
   function compareNames(a, b) {
@@ -161,6 +166,8 @@
       watch_types: listOf(source.watch_types),
       free_providers: listOf(source.free_providers),
       labels: noteMap(source.labels),
+      award_flags: listOf(source.award_flags),
+      award_ceremonies: ceremoniesOf(source.award_ceremonies),
       notes: {
         genres: noteMap(notes.genres),
         decades: noteMap(notes.decades),
@@ -168,6 +175,22 @@
         kinds: noteMap(notes.kinds),
       },
     };
+  }
+
+  function ceremoniesOf(value) {
+    if (!Array.isArray(value)) return [];
+    const out = [];
+    const seen = new Set();
+    for (const entry of value) {
+      if (!entry || typeof entry !== "object") continue;
+      const slug = typeof entry.slug === "string" ? entry.slug.trim() : "";
+      const name = typeof entry.name === "string" ? entry.name.trim() : "";
+      if (!slug || !name || seen.has(slug)) continue;
+      seen.add(slug);
+      const short = typeof entry.short === "string" && entry.short.trim() ? entry.short.trim() : name;
+      out.push({ slug, name, short, major: Boolean(entry.major) });
+    }
+    return out;
   }
 
   function activeRoles(facet) {
@@ -396,7 +419,59 @@
       if (video && video.year) add(video.year);
       for (const name of listOf(video && video.people)) add(name);
     }
+    for (const flag of awardFlagsOf(film)) {
+      add(flag);
+      add(labelOf(flag));
+      if (labels && labels[flag]) add(labels[flag]);
+    }
+    for (const term of listOf(film && film.award_terms)) add(term);
+    for (const award of awardsOf(film)) {
+      add(award.ceremony);
+      add(award.category);
+      add(award.result);
+      if (award.year) add(award.year);
+      for (const name of listOf(award.recipients)) add(name);
+    }
     return fold(parts.join(" "));
+  }
+
+  function awardsOf(film) {
+    return film && Array.isArray(film.awards) ? film.awards : [];
+  }
+
+  function awardFlagsOf(film) {
+    return listOf(film && film.award_flags);
+  }
+
+  function awardWinsOf(film) {
+    return listOf(film && film.award_wins);
+  }
+
+  function awardNominationsOf(film) {
+    return listOf(film && film.award_nominations);
+  }
+
+  function expectsAwards(film) {
+    if (!film) return false;
+    if (awardsOf(film).length) return true;
+    if ((Number(film.oscar_wins) || 0) > 0 || (Number(film.oscar_nominations) || 0) > 0) return true;
+    return awardWinsOf(film).length > 0 || awardNominationsOf(film).length > 0 || awardFlagsOf(film).length > 0;
+  }
+
+  function awardTerms(film) {
+    const out = [];
+    const seen = new Set();
+    for (const award of awardsOf(film)) {
+      for (const part of [award && award.ceremony, award && award.category]) {
+        if (typeof part !== "string") continue;
+        const text = part.trim();
+        const key = fold(text);
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        out.push(text);
+      }
+    }
+    return out;
   }
 
   function countValues(items, getValues) {
@@ -451,12 +526,13 @@
     return latest;
   }
 
-  // List rows keep credits and bonus videos. Watch URLs live in per-film detail files.
+  // List rows keep credits, bonus videos, and award summaries.
+  // Watch URLs and the full awards list live in per-film detail files.
   function listRecord(film) {
     const copy = {};
     const source = film || {};
     for (const key of Object.keys(source)) {
-      if (key === "where_to_watch") continue;
+      if (key === "where_to_watch" || key === "awards") continue;
       copy[key] = source[key];
     }
     if (!Number.isInteger(copy.runtime_minutes) && Number.isInteger(source.duration_seconds)) {
@@ -465,6 +541,9 @@
     if (!Number.isInteger(copy.duration_seconds) && Number.isInteger(source.runtime_minutes)) {
       copy.duration_seconds = source.runtime_minutes * 60;
     }
+    const terms = awardTerms(source);
+    if (terms.length) copy.award_terms = terms;
+    else delete copy.award_terms;
     copy.watch_count = Array.isArray(source.where_to_watch) ? source.where_to_watch.length : (Number.isInteger(source.watch_count) ? source.watch_count : 0);
     copy.related_count = bonusCount(source);
     const day = latestCheckedAt([source]);
@@ -477,6 +556,7 @@
     return {
       id: source.id,
       where_to_watch: Array.isArray(source.where_to_watch) ? source.where_to_watch : [],
+      awards: awardsOf(source),
     };
   }
 
@@ -535,6 +615,11 @@
       }),
       tagCount: countValues(items, tagsOf),
       kindCount: countValues(items, kindsOf),
+      awardFlags: orderedUnion(facet.award_flags, items.flatMap(awardFlagsOf)),
+      awardCeremonies: facet.award_ceremonies,
+      awardFlagCount: countValues(items, awardFlagsOf),
+      awardWinCount: countValues(items, awardWinsOf),
+      awardNomCount: countValues(items, awardNominationsOf),
       searchText: searchTextOf,
       latestChecked: latestCheckedAt(items),
       withVideo: items.filter((film) => film && film.youtube_id).length,
@@ -556,6 +641,9 @@
     const kind = source.kind || "All";
     const bonus = source.bonus || "All";
     const contentType = source.contentType || source.content_type || "All";
+    const award = source.award || "All";
+    const ceremonies = Array.isArray(source.ceremonies) ? source.ceremonies : [];
+    const ceremonyResult = source.ceremonyResult === "nominated" ? "nominated" : "won";
     const query = fold(source.query || "").trim();
     if (genre !== "All" && !genresOf(film).includes(genre)) return false;
     if (decade !== "All" && decadeOf(film) !== decade) return false;
@@ -564,6 +652,11 @@
     if (contentType !== "All" && textOf(film, "content_type") !== contentType) return false;
     if (bonus === "yes" && bonusCount(film) === 0) return false;
     if (bonus === "no" && bonusCount(film) > 0) return false;
+    if (award !== "All" && !awardFlagsOf(film).includes(award)) return false;
+    if (ceremonies.length) {
+      const held = ceremonyResult === "nominated" ? awardNominationsOf(film) : awardWinsOf(film);
+      if (!ceremonies.some((slug) => held.includes(slug))) return false;
+    }
     for (const role of ROLES) {
       const selected = source[role.id] || "All";
       if (selected === "All") continue;
@@ -591,6 +684,16 @@
       }
       if (sort === "genre") {
         return compareNames(primaryGenre(a, index), primaryGenre(b, index)) || compareNames(a.title, b.title) || yearKey(a.year) - yearKey(b.year);
+      }
+      if (sort === "oscar-wins") {
+        return (Number(b.oscar_wins) || 0) - (Number(a.oscar_wins) || 0) ||
+          (Number(b.oscar_nominations) || 0) - (Number(a.oscar_nominations) || 0) ||
+          compareNames(a.title, b.title);
+      }
+      if (sort === "oscar-noms") {
+        return (Number(b.oscar_nominations) || 0) - (Number(a.oscar_nominations) || 0) ||
+          (Number(b.oscar_wins) || 0) - (Number(a.oscar_wins) || 0) ||
+          compareNames(a.title, b.title);
       }
       return compareNames(a.title, b.title) || yearKey(a.year) - yearKey(b.year);
     });
@@ -795,6 +898,23 @@
     return entries.map((entry) => [entry.provider, entry.type, entry.region, entry.checked_at, entry.url].filter(Boolean).join(" · ")).join(" | ");
   }
 
+  function countCell(value) {
+    const number = Number(value);
+    return Number.isFinite(number) ? String(number) : "0";
+  }
+
+  function awardsCell(film) {
+    return awardsOf(film).map((entry) => {
+      const ceremony = entry && entry.ceremony ? entry.ceremony : "";
+      const year = entry && entry.year ? " " + entry.year : "";
+      const category = entry && entry.category ? entry.category : "";
+      const result = entry && entry.result ? entry.result : "";
+      const recipients = listOf(entry && entry.recipients);
+      const people = recipients.length ? " — " + recipients.join(", ") : "";
+      return ceremony + year + ": " + category + " (" + result + ")" + people;
+    }).join(" | ");
+  }
+
   function csvRow(film) {
     const youtubeId = textOf(film, "youtube_id");
     const values = [
@@ -823,6 +943,11 @@
       trainerUrl(youtubeId),
       watchCell(film),
       String(bonusCount(film)),
+      countCell(film && film.oscar_wins),
+      countCell(film && film.oscar_nominations),
+      joinList(awardWinsOf(film)),
+      joinList(awardFlagsOf(film)),
+      awardsCell(film),
     ];
     return values.map(csvField).join(",");
   }
@@ -856,6 +981,12 @@
     secondsOf,
     bonusCount,
     checkedDay,
+    awardsOf,
+    awardFlagsOf,
+    awardWinsOf,
+    awardNominationsOf,
+    expectsAwards,
+    awardTerms,
     listRecord,
     detailRecord,
     searchPeople,

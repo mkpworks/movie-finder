@@ -21,8 +21,8 @@ if (errors.length) {
   throw new Error("seed data failed validation");
 }
 assert(Array.isArray(movies), "movies array");
-assert(movies.length === 1506, "film count");
-assert(movies.filter((film) => film.where_to_watch.length > 0).length === 1392, "where to watch count");
+assert(movies.length === 3299, "film count");
+assert(movies.filter((film) => film.where_to_watch.length > 0).length === 2931, "where to watch count");
 assert(movies.filter((film) => film.related_videos.length > 0).length === 177, "bonus film count");
 assert(movies.reduce((sum, film) => sum + film.related_videos.length, 0) === 321, "bonus video count");
 for (const name of ["biography", "sport", "experimental", "foreign-language"]) {
@@ -40,13 +40,29 @@ const butch = movies.find((film) => film.id === "tt0064115");
 assert(butch && /butch cassidy/i.test(butch.title) && butch.related_videos.length >= 1, "Butch Cassidy bonus");
 const butchList = Catalog.listRecord(butch);
 assert(!Object.prototype.hasOwnProperty.call(butchList, "where_to_watch"), "list record omits watch urls");
+assert(!Object.prototype.hasOwnProperty.call(butchList, "awards"), "list record omits award entries");
+assert(Array.isArray(butchList.award_flags) && Array.isArray(butchList.award_wins), "list record keeps award summaries");
 assert(butchList.related_videos.length === butch.related_videos.length, "list record keeps bonus videos");
 assert(butchList.watch_count === butch.where_to_watch.length);
 assert(butchList.duration_seconds === butch.duration_seconds);
 assert(butchList.runtime_minutes > 0);
 assert(Catalog.detailRecord(butch).where_to_watch.length === butch.where_to_watch.length);
+assert(Array.isArray(Catalog.detailRecord(butch).awards), "detail record keeps awards");
+const daisy = movies.find((film) => film.id === "tt0097239");
+assert(daisy && daisy.oscar_wins === 4 && daisy.oscar_nominations === 9, "Driving Miss Daisy Oscars");
+assert(daisy.awards.some((entry) => entry.category === "Best Actress" && entry.result === "won" && entry.recipients.includes("Jessica Tandy")));
+const comedyOscars = movies.filter((film) => Catalog.matches(film, { genre: "comedy", award: "oscar-winner" }, fullIndex));
+assert(comedyOscars.length === 283, "oscar-winning comedies " + comedyOscars.length);
+const eightiesGlobes = movies.filter((film) => Catalog.matches(film, { decade: "1980s", ceremonies: ["golden-globe"], ceremonyResult: "won" }, fullIndex));
+assert(eightiesGlobes.length > 0, "1980s Golden Globe winners");
+const byOscars = Catalog.sortFilms(movies, "oscar-wins", fullIndex);
+assert((byOscars[0].oscar_wins || 0) >= (byOscars[1].oscar_wins || 0) && byOscars[0].oscar_wins >= 4, "sort by oscar wins");
+const listIndex = Catalog.buildIndex(movies.map(Catalog.listRecord), facets);
+assert(listIndex.movies.every((film) => !Object.prototype.hasOwnProperty.call(film, "awards")), "built list omits awards");
+assert(listIndex.movies.filter((film) => Catalog.matches(film, { query: "palme d'or" }, listIndex)).length > 0, "palme d'or search");
+assert(listIndex.movies.some((film) => film.id === "tt0097239" && Catalog.matches(film, { query: "best actress" }, listIndex)), "best actress search");
 assert(fullIndex.withBonus === 177);
-assert(fullIndex.latestChecked === "2026-11-23");
+assert(fullIndex.latestChecked === "2026-11-26");
 assert(Catalog.minutesOf(butch) === Math.round(butch.duration_seconds / 60) || Catalog.minutesOf(butch) > 0);
 
 const tagSamples = ["silent", "horror", "noir", "public-domain", "black-and-white", "animated", "cult"];
@@ -500,7 +516,8 @@ function parseCsv(text) {
 
 const sheet = parseCsv(Catalog.toCsv(Catalog.sortFilms(catalogFilms, "title", index)));
 assert(sheet[0].join(",") === Catalog.CSV_HEADERS.join(","), "csv header");
-assert(sheet[0][sheet[0].length - 1] === "related_count");
+assert(sheet[0][sheet[0].length - 1] === "awards");
+assert(sheet[0].includes("oscar_wins") && sheet[0].includes("oscar_nominations") && sheet[0].includes("award_wins") && sheet[0].includes("award_flags"));
 assert(sheet.length === catalogFilms.length + 1, "one csv row per film");
 const countAt = sheet[0].indexOf("related_count");
 const idAt = sheet[0].indexOf("id");
@@ -528,7 +545,7 @@ const bonusRows = Catalog.sortFilms(catalogFilms.filter((item) => Catalog.matche
 const bonusSheet = parseCsv(Catalog.toCsv(bonusRows));
 assert(bonusSheet.length === bonusRows.length + 1, "filtered csv is one row per film");
 const emptySheet = parseCsv(Catalog.toCsv([]));
-assert(emptySheet.length === 1 && emptySheet[0][emptySheet[0].length - 1] === "related_count", "empty catalog csv is a header");
+assert(emptySheet.length === 1 && emptySheet[0][emptySheet[0].length - 1] === "awards", "empty catalog csv is a header");
 
 const exported = path.join(os.tmpdir(), "mf-catalog-" + process.pid + ".csv");
 const exportRun = spawnSync(process.execPath, [path.join(root, "scripts", "export-csv.js"), exported], { encoding: "utf8" });
@@ -594,9 +611,12 @@ assert(boot.includes("attachShadow") && boot.includes("[data-movie-finder]") && 
 assert(boot.includes('cache: "no-store"'), "version fetch bypasses the pages cache");
 assert(boot.includes("data-theme") && boot.includes("data-accent") && boot.includes("data-height"));
 assert(boot.includes("data-kind") && boot.includes("data-genre") && boot.includes("options.kind"), "embed presets kind and genre");
+assert(boot.includes("data-award") && boot.includes("data-ceremony") && boot.includes("options.award"), "embed presets awards");
+assert(demo.includes("data-award") && demo.includes("data-ceremony"), "embed demo documents awards");
+assert(viewSource.includes("Most Oscar wins") && viewSource.includes("award-badge") && viewSource.includes("Awards"), "award ui");
 assert(boot.includes("data-content-type") && boot.includes("data/film/"), "embed loads per-film details");
 const workflow = fs.readFileSync(path.join(root, ".github/workflows/pages.yml"), "utf8");
-for (const name of ["actions/configure-pages", "actions/upload-pages-artifact", "actions/deploy-pages", "scripts/validate-data.js", "scripts/check-catalog.js", "scripts/build-catalog.js", "scripts/build-embed.js", "embed-demo.html", "workflow_dispatch", "needs: build"]) {
+for (const name of ["actions/configure-pages", "actions/upload-pages-artifact", "actions/deploy-pages", "scripts/validate-data.js", "scripts/validate-awards.js", "scripts/check-catalog.js", "scripts/build-catalog.js", "scripts/build-embed.js", "embed-demo.html", "workflow_dispatch", "needs: build"]) {
   assert(workflow.includes(name), name);
 }
 const deployJob = workflow.split(/\n {2}deploy:\n/)[1] || "";
@@ -617,12 +637,20 @@ assert(versionFile.version === "1" && catalogFile.version === "1", "schema versi
 assert(versionFile.generated_at === catalogFile.generated_at && /^\d{4}-\d{2}-\d{2}T/.test(versionFile.generated_at), "generated_at");
 assert(catalogFile.movies.length === movies.length, "catalog.json movies");
 assert(catalogFile.facets.kinds.includes("trailer") && catalogFile.facets.genres.includes("drama"), "catalog.json facets");
-assert(catalogFile.latest_checked === "2026-11-23", "catalog latest check");
+assert(catalogFile.latest_checked === "2026-11-26", "catalog latest check");
 const slimButch = catalogFile.movies.find((film) => film.id === "tt0064115");
-assert(slimButch && !slimButch.where_to_watch && slimButch.related_videos.length >= 1, "slim row keeps the bonus video and drops watch urls");
+assert(slimButch && !slimButch.where_to_watch && !slimButch.awards && slimButch.related_videos.length >= 1, "slim row keeps the bonus video and drops watch urls and award entries");
+assert(catalogFile.movies.every((film) => !Object.prototype.hasOwnProperty.call(film, "awards")), "catalog list omits award entries");
 const detail = JSON.parse(fs.readFileSync(path.join(built, "film", "tt0064115.json"), "utf8"));
 assert(detail.where_to_watch.length === butch.where_to_watch.length, "detail file keeps every watch offer");
 assert(detail.where_to_watch[0].url === butch.where_to_watch[0].url);
+assert(Array.isArray(detail.awards), "detail file keeps awards");
+const daisyDetail = JSON.parse(fs.readFileSync(path.join(built, "film", "tt0097239.json"), "utf8"));
+assert(daisyDetail.awards.filter((entry) => entry.ceremony === "Academy Awards" && entry.result === "won").length === 4, "Daisy detail lists 4 Oscar wins");
+const awardsOnly = movies.find((film) => film.where_to_watch.length === 0 && film.awards.length > 0);
+assert(awardsOnly && fs.existsSync(path.join(built, "film", awardsOnly.id + ".json")), "awards-only film has a detail file");
+const neither = movies.find((film) => film.where_to_watch.length === 0 && film.awards.length === 0);
+assert(neither && !fs.existsSync(path.join(built, "film", neither.id + ".json")), "films without offers or awards have no detail file");
 const embedOut = path.join(built, "embed.js");
 const embedBuild = spawnSync(process.execPath, [path.join(root, "scripts", "build-embed.js"), embedOut], { encoding: "utf8" });
 assert(embedBuild.status === 0, embedBuild.stderr || "build-embed failed");

@@ -14,6 +14,7 @@
       detailBase: detailBase || "",
       themeTarget: document.documentElement,
       persistTheme: true,
+      syncUrl: true,
     });
   }
 

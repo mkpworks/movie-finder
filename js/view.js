@@ -69,6 +69,28 @@
     return "All";
   }
 
+  function pickCeremony(value, ceremonies) {
+    const list = ceremonies || [];
+    const raw = Array.isArray(value) ? value : String(value || "").split(",");
+    const out = [];
+    for (const item of raw) {
+      const text = String(item || "").trim();
+      if (!text || Catalog.fold(text) === "all") continue;
+      const found = list.find((ceremony) => {
+        return ceremony.slug === text ||
+          Catalog.fold(ceremony.slug) === Catalog.fold(text) ||
+          Catalog.fold(ceremony.short) === Catalog.fold(text) ||
+          Catalog.fold(ceremony.name) === Catalog.fold(text);
+      });
+      if (found && !out.includes(found.slug)) out.push(found.slug);
+    }
+    return out;
+  }
+
+  function pickCeremonyResult(value) {
+    return Catalog.fold(value) === "nominated" ? "nominated" : "won";
+  }
+
   function presets(options, index) {
     const source = options || {};
     const idx = index || {};
@@ -80,6 +102,9 @@
       kind: pickValue(source.kind, idx.kinds, idx),
       contentType: pickValue(source.contentType || source.content_type, idx.contentTypes, idx),
       bonus: pickBonus(source.bonus),
+      award: pickValue(source.award, idx.awardFlags, idx),
+      ceremonies: pickCeremony(source.ceremony || source.ceremonies, idx.awardCeremonies),
+      ceremonyResult: pickCeremonyResult(source.ceremonyResult || source.ceremony_result),
       director: pickPerson(source.director, people.director),
       cast: pickPerson(source.cast, people.cast),
       writer: pickPerson(source.writer, people.writer),
@@ -104,6 +129,9 @@
       bonus: source.bonus || "All",
       kind: source.kind || "All",
       contentType: source.contentType || "All",
+      award: source.award || "All",
+      ceremonies: Array.isArray(source.ceremonies) ? source.ceremonies.slice() : [],
+      ceremonyResult: source.ceremonyResult === "nominated" ? "nominated" : "won",
       query: query || "",
     };
   }
@@ -119,6 +147,11 @@
     if (next.contentType !== "All" && hits.some((item) => item.content_type !== next.contentType)) next.contentType = "All";
     if (next.bonus === "yes" && hits.some((item) => Catalog.bonusCount(item) === 0)) next.bonus = "All";
     if (next.bonus === "no" && hits.some((item) => Catalog.bonusCount(item) > 0)) next.bonus = "All";
+    if (next.award !== "All" && hits.some((item) => !Catalog.awardFlagsOf(item).includes(next.award))) next.award = "All";
+    if (next.ceremonies.length) {
+      const held = next.ceremonyResult === "nominated" ? Catalog.awardNominationsOf : Catalog.awardWinsOf;
+      if (hits.some((item) => !next.ceremonies.some((slug) => held(item).includes(slug)))) next.ceremonies = [];
+    }
     for (const role of Catalog.ROLES) {
       const selected = next[role.id];
       if (selected !== "All" && hits.some((item) => !Catalog.namesFor(item, role.id).some((name) => Catalog.fold(name) === Catalog.fold(selected)))) {
@@ -136,7 +169,7 @@
       '<header class="site-header"><div class="wrap header-row"><div>',
       '<p class="eyebrow">Film catalog</p>',
       "<h1>Movie Finder</h1>",
-      '<p class="lede" id="summary">Search films by title and people. Filter by genre, decade, tag, and crew.</p>',
+      '<p class="lede" id="summary">Search films by title and people. Filter by genre, decade, awards, and crew.</p>',
       '<dl class="stats" id="stats"></dl>',
       "</div>",
       '<button type="button" class="btn" id="theme" data-action="theme">Light theme</button>',
@@ -166,7 +199,20 @@
       '<label class="field">Producer <select id="producer"></select></label>',
       '<label class="field">Bonus features <select id="bonus"><option value="All">All</option><option value="yes">Has bonus features</option><option value="no">No bonus features</option></select></label>',
       '<label class="field">Kind <select id="kind"></select></label>',
-      '<label class="field">Sort by <select id="sort"><option value="title">Title A–Z</option><option value="year">Year (oldest first)</option><option value="genre">Genre A–Z</option></select></label>',
+      '<label class="field">Sort by <select id="sort"><option value="title">Title A–Z</option><option value="year">Year (oldest first)</option><option value="genre">Genre A–Z</option><option value="oscar-wins">Most Oscar wins</option><option value="oscar-noms">Most Oscar nominations</option></select></label>',
+      '<div class="award-filter">',
+      '<div class="award-line-filters">',
+      '<span class="type-label" id="award-label">Awards</span>',
+      '<div class="chips" id="award-flags" role="radiogroup" aria-labelledby="award-label"></div>',
+      "</div>",
+      '<div class="award-line-filters">',
+      '<span class="type-label" id="ceremony-label">Ceremony</span>',
+      '<div class="modes" role="group" aria-label="Won or nominated">',
+      '<button type="button" data-action="ceremony-result" data-result="won" aria-pressed="true">Won</button>',
+      '<button type="button" data-action="ceremony-result" data-result="nominated" aria-pressed="false">Nominated</button>',
+      "</div>",
+      '<div class="chips" id="award-ceremonies" role="group" aria-labelledby="ceremony-label"></div>',
+      "</div></div>",
       "</div></section>",
       '<div class="toolbar"><p class="status" id="status" aria-live="polite">Loading the catalog…</p>',
       '<div class="toolbar-actions">',
@@ -233,6 +279,9 @@
       bonus: "All",
       kind: "All",
       contentType: "All",
+      award: "All",
+      ceremonies: [],
+      ceremonyResult: "won",
       peopleQuery: "",
       query: "",
       page: 0,
@@ -265,8 +314,18 @@
     }
 
     function needsDetail(film) {
-      if (!film || Array.isArray(film.where_to_watch)) return false;
-      return (film.watch_count || 0) > 0;
+      if (!film) return false;
+      const missingWatch = !Array.isArray(film.where_to_watch) && (film.watch_count || 0) > 0;
+      const missingAwards = !Array.isArray(film.awards) && Catalog.expectsAwards(film);
+      return missingWatch || missingAwards;
+    }
+
+    function normalizeDetail(detail) {
+      const source = detail && typeof detail === "object" ? detail : {};
+      return {
+        where_to_watch: Array.isArray(source.where_to_watch) ? source.where_to_watch : [],
+        awards: Array.isArray(source.awards) ? source.awards : [],
+      };
     }
 
     const detailQueue = [];
@@ -288,7 +347,7 @@
         Promise.all(batch.map(fetchDetail)).then((list) => {
           list.forEach((detail, index) => {
             const film = batch[index];
-            detailCache.set(film.id, detail && Array.isArray(detail.where_to_watch) ? detail : { where_to_watch: [] });
+            detailCache.set(film.id, normalizeDetail(detail));
             detailPending.delete(film.id);
           });
           scheduleDetailRender();
@@ -356,6 +415,8 @@
         state.kind === "All" &&
         state.bonus === "All" &&
         state.contentType === "All" &&
+        state.award === "All" &&
+        state.ceremonies.length === 0 &&
         ROLE_IDS.every((id) => state[id] === "All");
     }
 
@@ -408,6 +469,93 @@
         '<img class="thumb" alt="" width="320" height="180" loading="lazy" decoding="async" src="https://i.ytimg.com/vi/' + encodeURIComponent(id) + '/mqdefault.jpg">' +
         '<span class="play-mark" aria-hidden="true">' + esc(mark) + "</span>" +
         "</button></div>";
+    }
+
+    function awardBadges(film) {
+      const flags = Catalog.awardFlagsOf(film);
+      const wins = Catalog.awardWinsOf(film);
+      const oscarWins = Number(film.oscar_wins) || 0;
+      const oscarNoms = Number(film.oscar_nominations) || 0;
+      const badges = [];
+      if (flags.includes("best-picture-winner")) {
+        badges.push({ klass: "is-oscar", text: "Best Picture", label: "Won Best Picture" });
+      } else if (oscarWins > 1) {
+        badges.push({ klass: "is-oscar", text: "🏆 " + oscarWins + " Oscars", label: "Won " + oscarWins + " Academy Awards" });
+      } else if (oscarWins === 1) {
+        badges.push({ klass: "is-oscar", text: "Oscar", label: "Won 1 Academy Award" });
+      } else if (oscarNoms > 0) {
+        const text = oscarNoms === 1 ? "1 Oscar nom" : oscarNoms + " Oscar noms";
+        const label = oscarNoms === 1 ? "1 Academy Award nomination" : oscarNoms + " Academy Award nominations";
+        badges.push({ klass: "is-oscar-nom", text, label });
+      }
+      const others = [];
+      for (const ceremony of index.awardCeremonies || []) {
+        if (ceremony.slug === "oscar") continue;
+        if (wins.includes(ceremony.slug)) others.push(ceremony);
+      }
+      for (const ceremony of others.slice(0, 3)) {
+        badges.push({ klass: "is-award", text: ceremony.short, label: "Won a " + ceremony.name + " award" });
+      }
+      const extra = others.length - Math.min(others.length, 3);
+      if (extra > 0) badges.push({ klass: "is-more", text: "+" + extra, label: extra + " more award wins" });
+      if (!badges.length) return "";
+      return '<p class="award-badges">' + badges.map((badge) => {
+        return '<span class="award-badge ' + badge.klass + '" aria-label="' + esc(badge.label) + '">' + esc(badge.text) + "</span>";
+      }).join("") + "</p>";
+    }
+
+    function awardLine(entry) {
+      const won = entry && entry.result === "won";
+      const recipients = Array.isArray(entry && entry.recipients) ? entry.recipients : [];
+      const people = recipients.filter(Boolean).map((name) => searchButton(name, "name-link")).join('<span class="act-sep">, </span>');
+      const peopleHtml = people ? ' <span class="award-recipients">— ' + people + "</span>" : "";
+      return '<li class="award-line' + (won ? " is-won" : "") + '"><span class="award-category">' + esc(entry.category) + "</span>" +
+        peopleHtml +
+        '<span class="award-pill ' + (won ? "is-won" : "is-nominated") + '">' + (won ? "Won" : "Nominated") + "</span></li>";
+    }
+
+    function awardsSection(film) {
+      if (!Array.isArray(film.awards)) {
+        return Catalog.expectsAwards(film) ? '<p class="section-note award-pending">Loading awards…</p>' : "";
+      }
+      if (!film.awards.length) return "";
+      const order = new Map((index.awardCeremonies || []).map((ceremony, at) => [ceremony.name, at]));
+      const groups = new Map();
+      for (const entry of film.awards) {
+        if (!entry || !entry.ceremony) continue;
+        const year = entry.year || 0;
+        const key = entry.ceremony + "\t" + year;
+        if (!groups.has(key)) groups.set(key, { ceremony: entry.ceremony, year, entries: [] });
+        groups.get(key).entries.push(entry);
+      }
+      const keys = [...groups.keys()].sort((a, b) => {
+        const left = groups.get(a);
+        const right = groups.get(b);
+        const leftAt = order.has(left.ceremony) ? order.get(left.ceremony) : 999;
+        const rightAt = order.has(right.ceremony) ? order.get(right.ceremony) : 999;
+        return leftAt - rightAt || left.year - right.year || left.ceremony.localeCompare(right.ceremony);
+      });
+      const oscarWins = Number(film.oscar_wins) || 0;
+      const oscarNoms = Number(film.oscar_nominations) || 0;
+      let summary = "";
+      if (oscarWins > 0) {
+        summary = '<p class="award-summary">' + oscarWins + " Oscar win" + (oscarWins === 1 ? "" : "s") + " · " + oscarNoms + " Oscar nomination" + (oscarNoms === 1 ? "" : "s") + "</p>";
+      } else if (oscarNoms > 0) {
+        summary = '<p class="award-summary">' + oscarNoms + " Oscar nomination" + (oscarNoms === 1 ? "" : "s") + "</p>";
+      }
+      const body = keys.map((key) => {
+        const group = groups.get(key);
+        const wins = group.entries.filter((entry) => entry.result === "won").length;
+        const total = group.entries.length;
+        const year = group.year ? " " + group.year : "";
+        const counts = wins + " win" + (wins === 1 ? "" : "s") + ", " + total + " nomination" + (total === 1 ? "" : "s");
+        const lines = group.entries.slice().sort((a, b) => {
+          if (a.result === b.result) return 0;
+          return a.result === "won" ? -1 : 1;
+        }).map(awardLine).join("");
+        return '<section class="award-group"><h4 class="award-group-title">' + esc(group.ceremony + year + " — " + counts) + '</h4><ul class="award-lines">' + lines + "</ul></section>";
+      }).join("");
+      return '<section class="awards"><h4 class="awards-title">Awards</h4>' + summary + body + "</section>";
     }
 
     function watchBadges(film) {
@@ -538,6 +686,7 @@
         "<" + titleTag + ' class="film-title">' + esc(film.title) + "</" + titleTag + ">" +
         links +
         "</div>" +
+        awardBadges(film) +
         '<p class="meta">' +
         (film.year ? "<span>" + esc(film.year) + "</span>" : "") +
         decadeHtml +
@@ -552,6 +701,7 @@
         castLine(film) +
         creditLine(film) +
         (wrapped ? '<div class="chips">' + wrapped + "</div>" : "") +
+        awardsSection(film) +
         watchBadges(film) +
         bonusSection(film) +
         sharedHtml +
@@ -650,6 +800,75 @@
       }
     }
 
+    function renderAwardFilters() {
+      const flags = byId("award-flags");
+      if (flags) {
+        const options = [{ id: "All", label: "Any" }].concat((index.awardFlags || []).map((flag) => ({
+          id: flag,
+          label: Catalog.labelFor(index, flag),
+          count: (index.awardFlagCount && index.awardFlagCount[flag]) || 0,
+        })));
+        flags.innerHTML = options.map((option) => {
+          const on = state.award === option.id;
+          const count = option.id === "All" ? "" : '<span class="chip-count">' + option.count + "</span>";
+          return '<span class="chip"><button type="button" class="chip-btn' + (on ? " is-on" : "") + '" role="radio" aria-checked="' + (on ? "true" : "false") + '" data-action="award" data-award="' + esc(option.id) + '">' + esc(option.label) + "</button>" + count + "</span>";
+        }).join("");
+      }
+      const host = byId("award-ceremonies");
+      if (host) {
+        const counts = state.ceremonyResult === "nominated" ? index.awardNomCount : index.awardWinCount;
+        host.innerHTML = (index.awardCeremonies || []).map((ceremony) => {
+          const on = state.ceremonies.includes(ceremony.slug);
+          const count = (counts && counts[ceremony.slug]) || 0;
+          return '<span class="chip"><button type="button" class="chip-btn' + (on ? " is-on" : "") + '" aria-pressed="' + (on ? "true" : "false") + '" data-action="ceremony" data-ceremony="' + esc(ceremony.slug) + '">' + esc(ceremony.short) + '</button><span class="chip-count">' + count + "</span></span>";
+        }).join("");
+      }
+      root.querySelectorAll('[data-action="ceremony-result"]').forEach((button) => {
+        button.setAttribute("aria-pressed", button.getAttribute("data-result") === state.ceremonyResult ? "true" : "false");
+      });
+    }
+
+    function readUrlFilters() {
+      if (!opts.syncUrl || typeof location === "undefined") return {};
+      const params = new URLSearchParams(location.search);
+      return {
+        query: params.get("q") || "",
+        genre: params.get("genre"),
+        decade: params.get("decade"),
+        tag: params.get("tag"),
+        kind: params.get("kind"),
+        bonus: params.get("bonus"),
+        contentType: params.get("type") || params.get("content_type"),
+        award: params.get("award"),
+        ceremony: params.get("ceremony"),
+        ceremonyResult: params.get("ceremony_result"),
+        director: params.get("director"),
+        cast: params.get("cast"),
+        writer: params.get("writer"),
+        composer: params.get("composer"),
+        cinematographer: params.get("cinematographer"),
+        producer: params.get("producer"),
+        sort: params.get("sort"),
+      };
+    }
+
+    function writeUrl() {
+      if (!opts.syncUrl || typeof history === "undefined" || typeof location === "undefined") return;
+      const params = new URLSearchParams();
+      if (state.query.trim()) params.set("q", state.query.trim());
+      for (const key of ["genre", "decade", "tag", "kind", "bonus", "director", "cast", "writer", "composer", "cinematographer", "producer", "award"]) {
+        if (state[key] && state[key] !== "All") params.set(key, state[key]);
+      }
+      if (state.contentType && state.contentType !== "All") params.set("type", state.contentType);
+      if (state.ceremonies.length) params.set("ceremony", state.ceremonies.join(","));
+      if (state.ceremonies.length && state.ceremonyResult === "nominated") params.set("ceremony_result", "nominated");
+      if (state.sort && state.sort !== "title") params.set("sort", state.sort);
+      const next = params.toString();
+      const current = location.search.startsWith("?") ? location.search.slice(1) : location.search;
+      if (next === current) return;
+      history.replaceState(null, "", location.pathname + (next ? "?" + next : "") + location.hash);
+    }
+
     function render(scroll) {
       if (!index) return;
       const active = root.activeElement;
@@ -720,6 +939,8 @@
       }
 
       syncControls(pages);
+      renderAwardFilters();
+      writeUrl();
       if (focusGroup) {
         const again = [...root.querySelectorAll("[data-group]")].find((node) => node.getAttribute("data-group") === focusGroup);
         if (again) again.focus();
@@ -811,6 +1032,9 @@
       state.bonus = next.bonus;
       state.kind = next.kind;
       state.contentType = next.contentType;
+      state.award = next.award;
+      state.ceremonies = next.ceremonies.slice();
+      state.ceremonyResult = next.ceremonyResult;
     }
 
     function runSearch(query, scroll) {
@@ -835,6 +1059,9 @@
       state.bonus = defaults.bonus;
       state.kind = defaults.kind;
       state.contentType = defaults.contentType;
+      state.award = defaults.award;
+      state.ceremonies = defaults.ceremonies.slice();
+      state.ceremonyResult = defaults.ceremonyResult;
       state.query = "";
       state.page = 0;
       state.seedMode = true;
@@ -854,10 +1081,43 @@
       state.bonus = "All";
       state.kind = "All";
       state.contentType = "All";
+      state.award = "All";
+      state.ceremonies = [];
+      state.ceremonyResult = "won";
       state.query = "";
       state.page = 0;
       state.seedMode = true;
       state[key] = value;
+    }
+
+    function exportCurrentCsv() {
+      const rows = currentRows();
+      const missing = rows.filter((film) => needsDetail(film) && !detailCache.has(film.id));
+      if (!missing.length || missing.length > 500) {
+        downloadCsv("movie-finder.csv", Catalog.toCsv(rows.map(merged)));
+        return;
+      }
+      const status = byId("status");
+      if (status) status.textContent = "Preparing the spreadsheet…";
+      const queue = missing.filter((film) => !detailPending.has(film.id));
+      for (const film of queue) detailPending.add(film.id);
+      const size = 8;
+      const step = (at) => {
+        if (at >= queue.length) {
+          downloadCsv("movie-finder.csv", Catalog.toCsv(currentRows().map(merged)));
+          render(false);
+          return;
+        }
+        const batch = queue.slice(at, at + size);
+        Promise.all(batch.map(fetchDetail)).then((list) => {
+          list.forEach((detail, index) => {
+            detailCache.set(batch[index].id, normalizeDetail(detail));
+            detailPending.delete(batch[index].id);
+          });
+          step(at + size);
+        });
+      };
+      step(0);
     }
 
     function downloadCsv(filename, text) {
@@ -913,7 +1173,25 @@
         render(false);
       } else if (action === "csv") {
         if (!index) return;
-        downloadCsv("movie-finder.csv", Catalog.toCsv(currentRows()));
+        exportCurrentCsv();
+      } else if (action === "award") {
+        state.award = el.getAttribute("data-award") || "All";
+        state.page = 0;
+        state.seedMode = true;
+        render(false);
+      } else if (action === "ceremony") {
+        const slug = el.getAttribute("data-ceremony") || "";
+        if (!slug) return;
+        state.ceremonies = state.ceremonies.includes(slug)
+          ? state.ceremonies.filter((item) => item !== slug)
+          : state.ceremonies.concat(slug);
+        state.page = 0;
+        state.seedMode = true;
+        render(false);
+      } else if (action === "ceremony-result") {
+        state.ceremonyResult = el.getAttribute("data-result") === "nominated" ? "nominated" : "won";
+        state.page = 0;
+        render(false);
       } else if (action === "play") {
         const wrap = el.closest(".thumb-wrap");
         const id = el.getAttribute("data-youtube") || "";
@@ -983,19 +1261,27 @@
     const movies = Array.isArray(opts.movies) ? opts.movies : null;
     if (!movies) throw new Error("movies");
     index = Catalog.buildIndex(movies, opts.facets || {});
+    const urlFilters = readUrlFilters();
+    const SORTS = ["title", "year", "genre", "oscar-wins", "oscar-noms"];
     defaults = presets(opts, index);
-    state.genre = defaults.genre;
-    state.decade = defaults.decade;
-    state.tag = defaults.tag;
-    state.director = defaults.director;
-    state.cast = defaults.cast;
-    state.writer = defaults.writer;
-    state.composer = defaults.composer;
-    state.cinematographer = defaults.cinematographer;
-    state.producer = defaults.producer;
-    state.bonus = defaults.bonus;
-    state.kind = defaults.kind;
-    state.contentType = defaults.contentType;
+    const initial = presets(Object.assign({}, opts, urlFilters), index);
+    state.genre = initial.genre;
+    state.decade = initial.decade;
+    state.tag = initial.tag;
+    state.director = initial.director;
+    state.cast = initial.cast;
+    state.writer = initial.writer;
+    state.composer = initial.composer;
+    state.cinematographer = initial.cinematographer;
+    state.producer = initial.producer;
+    state.bonus = initial.bonus;
+    state.kind = initial.kind;
+    state.contentType = initial.contentType;
+    state.award = initial.award;
+    state.ceremonies = initial.ceremonies.slice();
+    state.ceremonyResult = initial.ceremonyResult;
+    state.query = urlFilters.query || "";
+    if (SORTS.includes(urlFilters.sort)) state.sort = urlFilters.sort;
     state.pickId = movies[0] ? movies[0].id : "";
     bind();
     fillSelect("genre", index.genres, (value) => Catalog.labelFor(index, value));
@@ -1017,7 +1303,7 @@
     const summary = byId("summary");
     if (summary) {
       summary.textContent = movies.length
-        ? movies.length + " films. Search by title and people, and filter by genre, decade, tag, and crew."
+        ? movies.length + " films. Search by title and people, and filter by genre, decade, awards, and crew."
         : "No films in the catalog yet. Genre, decade, tag, and kind filters load from the facet list.";
     }
     const peopleCount = byId("people-count");

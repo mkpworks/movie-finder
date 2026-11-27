@@ -243,6 +243,22 @@ const facetIndex = Catalog.buildIndex([], facets);
 assert(JSON.stringify(facetIndex.genres) === JSON.stringify(facets.genres), "genre order follows facets");
 assert(JSON.stringify(facetIndex.kinds) === JSON.stringify(facets.kinds), "kind order follows facets");
 assert(JSON.stringify(facetIndex.decades) === JSON.stringify(facets.decades));
+assert(Catalog.compareOptionLabels("Funk", "Triads") < 0, "Funk before Triads");
+assert(Catalog.compareOptionLabels("funk", "TRIADS") < 0, "option order ignores case");
+assert(Catalog.compareOptionLabels("Part 2", "Part 10") < 0, "option order is numeric");
+assert(Catalog.compareOptionLabels("Part 10", "Part 2") > 0, "numeric option order is not lexical");
+assert(JSON.stringify(Catalog.sortOptionEntries(["Triads", "All instruments", "Funk", "Any", "Part 10", "Part 2", "All"])) === JSON.stringify(["All instruments", "Any", "All", "Funk", "Part 2", "Part 10", "Triads"]), "placeholders stay first");
+assert(Catalog.sortOptionEntries(["Any award win", "Aardvark"])[0] === "Aardvark", "Any award win is not a placeholder");
+function facetLabel(slug) {
+  return (facets.labels && facets.labels[slug]) || Catalog.labelOf(slug);
+}
+const alphaGenres = Catalog.sortOptionEntries(facets.genres, facetLabel);
+assert(alphaGenres[0] === "action" && alphaGenres.indexOf("fantasy") < alphaGenres.indexOf("film-noir"), "genre labels sort alphabetically");
+const alphaKinds = Catalog.sortOptionEntries(facets.kinds, facetLabel);
+assert(alphaKinds[0] === "behind-the-scenes" && alphaKinds[alphaKinds.length - 1] === "trailer", "kind labels sort alphabetically");
+const ceremonyShorts = Catalog.sortOptionEntries(facets.award_ceremonies, (ceremony) => ceremony.short).map((ceremony) => ceremony.short);
+assert(ceremonyShorts[0] === "AACTA" && ceremonyShorts.indexOf("Cannes") < ceremonyShorts.indexOf("César") && ceremonyShorts.indexOf("Golden Globe") < ceremonyShorts.indexOf("Oscar"), "ceremony labels sort alphabetically");
+assert(JSON.stringify(facets.award_flags) === JSON.stringify(["oscar-winner", "oscar-nominee", "best-picture-winner", "best-picture-nominee", "major-award-winner", "award-winner", "award-nominee"]), "grouped award flags stay logical");
 assert(Catalog.labelFor(facetIndex, "q-and-a") === "Q&A");
 assert(Catalog.labelFor(facetIndex, "science-fiction") === "Science fiction");
 assert(Catalog.facetNote(facetIndex, "tags", "public-domain").includes("ads"));
@@ -614,6 +630,9 @@ assert(boot.includes("data-kind") && boot.includes("data-genre") && boot.include
 assert(boot.includes("data-award") && boot.includes("data-ceremony") && boot.includes("options.award"), "embed presets awards");
 assert(demo.includes("data-award") && demo.includes("data-ceremony"), "embed demo documents awards");
 assert(viewSource.includes("Most Oscar wins") && viewSource.includes("award-badge") && viewSource.includes("Awards"), "award ui");
+assert(viewSource.includes('fillSelect("decade", index.decades, (value) => Catalog.labelFor(index, value), { preserveOrder: true })'), "decade select stays chronological");
+assert(viewSource.includes("sortOptionEntries(index.awardCeremonies"), "ceremony options sort alphabetically");
+assert(viewSource.includes("sortOptionEntries((index.people"), "people selects sort by name");
 assert(boot.includes("data-content-type") && boot.includes("data/film/"), "embed loads per-film details");
 const workflow = fs.readFileSync(path.join(root, ".github/workflows/pages.yml"), "utf8");
 for (const name of ["actions/configure-pages", "actions/upload-pages-artifact", "actions/deploy-pages", "scripts/validate-data.js", "scripts/validate-awards.js", "scripts/check-catalog.js", "scripts/build-catalog.js", "scripts/build-embed.js", "embed-demo.html", "workflow_dispatch", "needs: build"]) {
@@ -637,6 +656,13 @@ assert(versionFile.version === "1" && catalogFile.version === "1", "schema versi
 assert(versionFile.generated_at === catalogFile.generated_at && /^\d{4}-\d{2}-\d{2}T/.test(versionFile.generated_at), "generated_at");
 assert(catalogFile.movies.length === movies.length, "catalog.json movies");
 assert(catalogFile.facets.kinds.includes("trailer") && catalogFile.facets.genres.includes("drama"), "catalog.json facets");
+assert(JSON.stringify(catalogFile.facets.genres) === JSON.stringify(Catalog.sortOptionEntries(facets.genres, facetLabel)), "built genres are alphabetical");
+assert(JSON.stringify(catalogFile.facets.tags) === JSON.stringify(Catalog.sortOptionEntries(facets.tags, facetLabel)), "built tags are alphabetical");
+assert(JSON.stringify(catalogFile.facets.content_types) === JSON.stringify(Catalog.sortOptionEntries(facets.content_types, facetLabel)), "built content types are alphabetical");
+assert(JSON.stringify(catalogFile.facets.decades) === JSON.stringify(facets.decades), "built decades stay chronological");
+assert(JSON.stringify(catalogFile.facets.kinds) === JSON.stringify(facets.kinds), "built kinds stay in bonus order");
+assert(JSON.stringify(catalogFile.facets.award_flags) === JSON.stringify(facets.award_flags), "built award flags stay logical");
+assert(JSON.stringify(catalogFile.facets.award_ceremonies) === JSON.stringify(facets.award_ceremonies), "built ceremony order stays for film cards");
 assert(catalogFile.latest_checked === "2026-11-26", "catalog latest check");
 const slimButch = catalogFile.movies.find((film) => film.id === "tt0064115");
 assert(slimButch && !slimButch.where_to_watch && !slimButch.awards && slimButch.related_videos.length >= 1, "slim row keeps the bonus video and drops watch urls and award entries");

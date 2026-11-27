@@ -420,13 +420,18 @@
         ROLE_IDS.every((id) => state[id] === "All");
     }
 
-    function fillSelect(id, values, labeler) {
+    function fillSelect(id, values, labeler, options) {
       const select = byId(id);
       if (!select) return;
-      const choices = ['<option value="All">All</option>'];
+      const preserveOrder = Boolean(options && options.preserveOrder);
+      const rows = [];
       for (const value of values) {
-        const label = labeler ? labeler(value) : value;
-        choices.push('<option value="' + esc(value) + '">' + esc(label) + "</option>");
+        rows.push({ value, label: labeler ? labeler(value) : value });
+      }
+      const ordered = preserveOrder ? rows : Catalog.sortOptionEntries(rows, (row) => row.label);
+      const choices = ['<option value="All">All</option>'];
+      for (const row of ordered) {
+        choices.push('<option value="' + esc(row.value) + '">' + esc(row.label) + "</option>");
       }
       select.innerHTML = choices.join("");
     }
@@ -434,7 +439,7 @@
     function fillPeople(id, roleId) {
       const select = byId(id);
       if (!select) return;
-      const people = (index.people && index.people[roleId]) || [];
+      const people = Catalog.sortOptionEntries((index.people && index.people[roleId]) || [], (person) => person.name);
       const choices = ['<option value="All">All</option>'];
       for (const person of people) {
         choices.push('<option value="' + esc(person.name) + '">' + esc(person.name) + " · " + person.count + "</option>");
@@ -792,17 +797,20 @@
       if (peopleHost) peopleHost.innerHTML = peopleDirectory();
       const genreHost = byId("genre-list");
       if (genreHost) {
-        genreHost.innerHTML = index.genres.map((genre) => '<span class="chip">' + pivotButton("genre", genre, "chip-btn", Catalog.labelFor(index, genre)) + '<span class="chip-count">' + (index.genreCount[genre] || 0) + "</span></span>").join("");
+        const genres = Catalog.sortOptionEntries(index.genres, (genre) => Catalog.labelFor(index, genre));
+        genreHost.innerHTML = genres.map((genre) => '<span class="chip">' + pivotButton("genre", genre, "chip-btn", Catalog.labelFor(index, genre)) + '<span class="chip-count">' + (index.genreCount[genre] || 0) + "</span></span>").join("");
       }
       const tagHost = byId("tag-list");
       if (tagHost) {
-        tagHost.innerHTML = index.tags.map((tag) => '<span class="chip">' + pivotButton("tag", tag, "chip-btn", Catalog.labelFor(index, tag)) + '<span class="chip-count">' + (index.tagCount[tag] || 0) + "</span></span>").join("");
+        const tags = Catalog.sortOptionEntries(index.tags, (tag) => Catalog.labelFor(index, tag));
+        tagHost.innerHTML = tags.map((tag) => '<span class="chip">' + pivotButton("tag", tag, "chip-btn", Catalog.labelFor(index, tag)) + '<span class="chip-count">' + (index.tagCount[tag] || 0) + "</span></span>").join("");
       }
     }
 
     function renderAwardFilters() {
       const flags = byId("award-flags");
       if (flags) {
+        // Grouped flags stay in facet order. "Any" stays first.
         const options = [{ id: "All", label: "Any" }].concat((index.awardFlags || []).map((flag) => ({
           id: flag,
           label: Catalog.labelFor(index, flag),
@@ -817,7 +825,8 @@
       const host = byId("award-ceremonies");
       if (host) {
         const counts = state.ceremonyResult === "nominated" ? index.awardNomCount : index.awardWinCount;
-        host.innerHTML = (index.awardCeremonies || []).map((ceremony) => {
+        const ceremonies = Catalog.sortOptionEntries(index.awardCeremonies || [], (ceremony) => ceremony.short || ceremony.name);
+        host.innerHTML = ceremonies.map((ceremony) => {
           const on = state.ceremonies.includes(ceremony.slug);
           const count = (counts && counts[ceremony.slug]) || 0;
           return '<span class="chip"><button type="button" class="chip-btn' + (on ? " is-on" : "") + '" aria-pressed="' + (on ? "true" : "false") + '" data-action="ceremony" data-ceremony="' + esc(ceremony.slug) + '">' + esc(ceremony.short) + '</button><span class="chip-count">' + count + "</span></span>";
@@ -1285,7 +1294,7 @@
     state.pickId = movies[0] ? movies[0].id : "";
     bind();
     fillSelect("genre", index.genres, (value) => Catalog.labelFor(index, value));
-    fillSelect("decade", index.decades, (value) => Catalog.labelFor(index, value));
+    fillSelect("decade", index.decades, (value) => Catalog.labelFor(index, value), { preserveOrder: true });
     fillSelect("tag", index.tags, (value) => Catalog.labelFor(index, value));
     fillSelect("kind", index.kinds, (value) => Catalog.labelFor(index, value));
     fillSelect("content-type", index.contentTypes || [], (value) => Catalog.labelFor(index, value));

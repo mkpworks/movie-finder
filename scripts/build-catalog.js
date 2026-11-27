@@ -11,12 +11,27 @@ const facetPath = path.join(root, "data", "facets.json");
 const facets = fs.existsSync(facetPath) ? JSON.parse(fs.readFileSync(facetPath, "utf8")) : {};
 const generatedAt = new Date().toISOString();
 const list = movies.map(Catalog.listRecord);
+
+function facetLabel(slug) {
+  if (facets.labels && facets.labels[slug]) return facets.labels[slug];
+  return Catalog.labelOf(slug);
+}
+
+// Alphabetical vocabularies only. Decades, kinds, roles, watch types,
+// award flags, and ceremony display order stay as authored.
+const catalogFacets = Object.assign({}, facets);
+for (const key of ["genres", "tags", "content_types"]) {
+  if (Array.isArray(catalogFacets[key])) {
+    catalogFacets[key] = Catalog.sortOptionEntries(catalogFacets[key], facetLabel);
+  }
+}
+
 const catalog = {
   version: Catalog.SCHEMA_VERSION,
   generated_at: generatedAt,
   latest_checked: Catalog.latestCheckedAt(movies),
   movies: list,
-  facets,
+  facets: catalogFacets,
 };
 const version = {
   version: Catalog.SCHEMA_VERSION,

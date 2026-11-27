@@ -68,6 +68,30 @@
     return String(a).localeCompare(String(b), undefined, { sensitivity: "base" });
   }
 
+  // Option lists: case-insensitive natural order, with catch-all placeholders kept first.
+  const OPTION_PLACEHOLDERS = new Set(["all", "any", "all instruments"]);
+
+  function isOptionPlaceholder(label) {
+    return OPTION_PLACEHOLDERS.has(String(label == null ? "" : label).trim().toLowerCase());
+  }
+
+  function compareOptionLabels(a, b) {
+    const aHold = isOptionPlaceholder(a);
+    const bHold = isOptionPlaceholder(b);
+    if (aHold || bHold) {
+      if (aHold && bHold) return 0;
+      return aHold ? -1 : 1;
+    }
+    return String(a).localeCompare(String(b), undefined, { sensitivity: "base", numeric: true });
+  }
+
+  function sortOptionEntries(entries, labelOf) {
+    const list = Array.isArray(entries) ? entries.slice() : [];
+    const labeler = typeof labelOf === "function" ? labelOf : (entry) => entry;
+    list.sort((a, b) => compareOptionLabels(labeler(a), labeler(b)));
+    return list;
+  }
+
   function fold(value) {
     return String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
   }
@@ -970,6 +994,8 @@
     MODES,
     CSV_HEADERS,
     compareNames,
+    compareOptionLabels,
+    sortOptionEntries,
     fold,
     isSlug,
     isDecade,
